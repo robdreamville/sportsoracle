@@ -1,0 +1,6 @@
+praw
+python-dotenv
+tqdm
+feedparser
+sentence-transformers
+scikit-learn
