@@ -53,7 +53,7 @@ def embed_texts(texts, model_name="all-MiniLM-L6-v2"):
     embeddings = model.encode(texts, show_progress_bar=True, device=device)
     return embeddings
 
-def cluster_embeddings(embeddings, method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
+def cluster_embeddings(embeddings, method="dbscan", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
     """
     Cluster embeddings using KMeans or DBSCAN.
     method: 'kmeans' or 'dbscan'
@@ -92,7 +92,7 @@ def save_results(embeddings, metadata, labels):
         json.dump(clusters, f, indent=2)
     print(f"Saved embeddings ({len(embeddings)}), metadata, and clusters.")
 
-def run_pipeline(method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
+def run_pipeline(method="dbscan", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
     """
     Run the embedding and clustering pipeline.
     method: 'kmeans' or 'dbscan'

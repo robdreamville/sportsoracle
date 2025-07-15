@@ -6,6 +6,8 @@
 # Handles multilingual input and ensures all output is ASCII-clean and in English.
 
 import os
+import torch
+from datasets import load_dataset, concatenate_datasets, Dataset
 import json
 import re
 import unicodedata
@@ -96,8 +98,9 @@ def get_translator(lang_code):
     if lang_code not in lang2translator:
         return None
     model_name = lang2translator[lang_code]
+    device = 0 if torch.cuda.is_available() else -1
     if model_name not in get_translator.cache:
-        get_translator.cache[model_name] = pipeline("translation", model=model_name, device=0)
+        get_translator.cache[model_name] = pipeline("translation", model=model_name, device=device)
     return get_translator.cache[model_name]
 
 # -------------------------
@@ -110,6 +113,7 @@ def get_summarizer(lang_code):
     """
     if not hasattr(get_summarizer, "cache"):
         get_summarizer.cache = {}
+    device = 0 if torch.cuda.is_available() else -1
     if lang_code == "en":
         model_name = "facebook/bart-large-cnn"
         cache_key = (model_name, "en")
@@ -117,7 +121,7 @@ def get_summarizer(lang_code):
             get_summarizer.cache[cache_key] = pipeline(
                 "summarization",
                 model=model_name,
-                device=0
+                device=device
             )
         return get_summarizer.cache[cache_key]
     else:
@@ -127,7 +131,7 @@ def get_summarizer(lang_code):
             get_summarizer.cache[cache_key] = pipeline(
                 "summarization",
                 model=model_name,
-                device=0
+                device=device
             )
         return get_summarizer.cache[cache_key]
 
@@ -169,16 +173,14 @@ def summarize_clusters(
     """
     Summarize clusters with KeyBERT keyword extraction, top titles, and multilingual summarization.
     """
-    # Load clusters and metadata
+    # Load clusters and metadata (keep as is for now, but recommend Datasets for future scalability)
     with open(clusters_path, "r", encoding="utf-8") as f:
         clusters = json.load(f)
     metadata = []
     with open(metadata_path, "r", encoding="utf-8") as f:
         for line in f:
             metadata.append(json.loads(line))
-    # Build id -> metadata mapping
     id2meta = {item["id"]: item for item in metadata}
-    # Group posts by cluster
     cluster_posts = defaultdict(list)
     for entry in clusters:
         cid = entry["cluster"]
@@ -208,7 +210,11 @@ def summarize_clusters(
         return summary_sentence
 
     # Initialize KeyBERT with the same embedding model as used for clustering
-    kw_model = KeyBERT(model="all-MiniLM-L6-v2")
+    # Always use GPU if available
+    from sentence_transformers import SentenceTransformer
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    embed_model = SentenceTransformer("all-MiniLM-L6-v2", device=device)
+    kw_model = KeyBERT(model=embed_model)
 
     for cid, posts in cluster_posts.items():
         # --- Keyword extraction ---
@@ -219,17 +225,14 @@ def summarize_clusters(
         # Use KeyBERT for keyword extraction if enough content
         if all_text and len(all_text.split()) > 5:
             try:
-                # KeyBERT fails on very long texts, so chunk or truncate
                 max_chunk_words = 400
                 text_words = all_text.split()
                 if len(text_words) > max_chunk_words * 2:
-                    # If extremely long, sample two chunks: start and end
                     chunks = [
                         " ".join(text_words[:max_chunk_words]),
                         " ".join(text_words[-max_chunk_words:])
                     ]
                 elif len(text_words) > max_chunk_words:
-                    # If moderately long, just use the first chunk
                     chunks = [" ".join(text_words[:max_chunk_words])]
                 else:
                     chunks = [all_text]
