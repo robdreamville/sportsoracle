@@ -228,8 +228,12 @@ def summarize_clusters(
     def is_nba_or_soccer(post):
         if not post or not isinstance(post, dict):
             return False
-        cat = post.get("category", "").lower()
-        return "nba" in cat or "soccer" in cat
+        cat = post.get("category", None)
+        if cat is None:
+            print(f"[WARN] Post id {post.get('id', '[unknown]')} has None category; skipping NBA/soccer check.")
+            return False
+        cat_str = str(cat).lower()
+        return "nba" in cat_str or "soccer" in cat_str
 
     # Compute NBA/soccer post count per cluster
     cluster_cats = {}
