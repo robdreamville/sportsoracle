@@ -42,7 +42,7 @@ def embed_texts(texts, model_name="all-MiniLM-L6-v2"):
     embeddings = model.encode(texts, show_progress_bar=True, device=device)
     return embeddings
 
-def cluster_embeddings(embeddings, n_clusters=10):
+def cluster_embeddings(embeddings, n_clusters=20):
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
     labels = kmeans.fit_predict(embeddings)
     return labels
