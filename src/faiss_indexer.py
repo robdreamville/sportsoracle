@@ -10,11 +10,13 @@ import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
 
+DATA_DIR = "/content/sportsoracle/data"
+
 def build_faiss_index(
-    embeddings_path="data/embeddings.npy",
-    metadata_path="data/metadata.jsonl",
-    index_path="data/faiss.index",
-    mapping_path="data/index_mapping.json",
+    embeddings_path=os.path.join(DATA_DIR, "embeddings.npy"),
+    metadata_path=os.path.join(DATA_DIR, "metadata.jsonl"),
+    index_path=os.path.join(DATA_DIR, "faiss.index"),
+    mapping_path=os.path.join(DATA_DIR, "index_mapping.json"),
     model_name="all-MiniLM-L6-v2"
 ):
     """
