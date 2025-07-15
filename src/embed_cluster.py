@@ -1,8 +1,10 @@
+
 # =========================
 # SportsOracle: Embedding & Clustering Pipeline
 # =========================
-# This script loads combined sports data, generates embeddings, clusters them,
+# Loads combined sports data (Reddit + ESPN), generates embeddings, clusters them,
 # and saves the results for downstream analysis (summarization, search, etc).
+# Now uses Hugging Face Datasets for efficient, scalable data loading.
 # =========================
 
 import os
@@ -10,6 +12,7 @@ import json
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.cluster import KMeans, DBSCAN
+from datasets import load_dataset
 
 # Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
 def get_project_root():
@@ -18,85 +21,44 @@ def get_project_root():
 PROJECT_ROOT = get_project_root()
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
-def load_data(path=os.path.join(DATA_DIR, "raw_combined.json")):
+def load_data(path=os.path.join(DATA_DIR, "raw_combined.jsonl")):
     """
-    Load combined Reddit + ESPN data and construct a rich 'text_for_embedding' field for each item.
-    Handles different formats for Reddit and ESPN sources.
+    Load combined Reddit + ESPN data from JSONL using Hugging Face Datasets.
+    Returns:
+        metadata: list of dicts (original data, deduped)
+        texts: list of str (text for embedding)
     """
-    with open(path, "r", encoding="utf-8") as f:
-        items = json.load(f)
+    # Load as Hugging Face Dataset for efficient processing
+    ds = load_dataset("json", data_files=path, split="train")
 
     # Deduplicate by ID, filter out missing/null IDs
     seen_ids = set()
-    deduped_items = []
-    for item in items:
+    metadata = []
+    texts = []
+    for item in ds:
         item_id = str(item.get("id", "")).strip()
         if not item_id or item_id.lower() == "none":
-            continue  # skip items with missing/null ID
+            continue
         if item_id in seen_ids:
-            continue  # skip duplicates, keep first occurrence
+            continue
         seen_ids.add(item_id)
-        deduped_items.append(item)
-    items = deduped_items
-
-    # Subreddit to canonical category mapping and helpers
-    SUBREDDIT_TO_CATEGORY = {
-        "soccer": "soccer",
-        "football": "soccer",
-        "premierleague": "soccer",
-        "championsleague": "soccer",
-        "laliga": "soccer",
-        "seriea": "soccer",
-        "bundesliga": "soccer",
-        "ligue1": "soccer",
-        "nba": "nba",
-        "nbaoffseason": "nba",
-        "nba_draft": "nba",
-        "nbacirclejerk": "nba",
-    }
-    NBA_KEYWORDS = ["nba", "basketball"]
-    SOCCER_KEYWORDS = ["soccer", "football", "premier league", "champions league", "laliga", "serie a", "bundesliga", "ligue 1", "futbol"]
-
-    def infer_category(subreddit, title, text):
-        sub = (subreddit or "").lower()
-        if sub in SUBREDDIT_TO_CATEGORY:
-            return SUBREDDIT_TO_CATEGORY[sub]
-        for kw in NBA_KEYWORDS:
-            if kw in sub:
-                return "nba"
-        for kw in SOCCER_KEYWORDS:
-            if kw in sub:
-                return "soccer"
-        title_l = (title or "").lower()
-        text_l = (text or "").lower()
-        for kw in NBA_KEYWORDS:
-            if kw in title_l or kw in text_l:
-                return "nba"
-        for kw in SOCCER_KEYWORDS:
-            if kw in title_l or kw in text_l:
-                return "soccer"
-        return "other"
-
-    for item in items:
+        # Build text for embedding (Reddit: title+selftext, ESPN: title+summary+text)
         if item["source"] == "reddit":
             base_text = item.get("title", "") or ""
             selftext = item.get("selftext", "") or ""
-            item["text_for_embedding"] = f"{base_text}\n\n{selftext}".strip()
-            subreddit = item.get("subreddit", "")
-            item["category"] = infer_category(subreddit, item.get("title", ""), item.get("text", ""))
+            text_for_embedding = f"{base_text}\n\n{selftext}".strip()
         elif item["source"] == "espn":
             title = item.get("title", "") or ""
             summary = item.get("summary", "") or ""
             text = item.get("text", "") or ""
-            category = item.get("category", "") or ""
-            item["text_for_embedding"] = f"{title}\n\n{summary}\n\n{text}\n\nCategory: {category}".strip()
-            item["category"] = category.lower() if category else "espn"
+            text_for_embedding = f"{title}\n\n{summary}\n\n{text}".strip()
         else:
-            item["text_for_embedding"] = item.get("text", "")
-            item["category"] = "unknown"
-
-    texts = [item["text_for_embedding"] for item in items]
-    return items, texts
+            text_for_embedding = item.get("text", "")
+        item_out = dict(item)
+        item_out["text_for_embedding"] = text_for_embedding
+        metadata.append(item_out)
+        texts.append(text_for_embedding)
+    return metadata, texts
 
 def embed_texts(texts, model_name="all-MiniLM-L6-v2"):
     """
@@ -106,16 +68,20 @@ def embed_texts(texts, model_name="all-MiniLM-L6-v2"):
     model = SentenceTransformer(model_name)
     device = "cuda" if model.device.type == "cuda" else "cpu"
     print(f"Using device: {device}")
-    embeddings = model.encode(texts, show_progress_bar=False, device=device)
+    # Efficient batch encoding
+    embeddings = model.encode(texts, show_progress_bar=True, device=device, batch_size=64)
     return embeddings
 
 def cluster_embeddings(embeddings, method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
     """
     Cluster embeddings using KMeans or DBSCAN.
-    method: 'kmeans' or 'dbscan'
-    n_clusters: used only for KMeans
-    dbscan_eps, dbscan_min_samples: used only for DBSCAN
-    Returns: cluster labels (array)
+    Args:
+        embeddings: np.ndarray or list
+        method: 'kmeans' or 'dbscan'
+        n_clusters: used only for KMeans
+        dbscan_eps, dbscan_min_samples: used only for DBSCAN
+    Returns:
+        cluster labels (array)
     """
     if method == "kmeans":
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
@@ -131,13 +97,18 @@ def cluster_embeddings(embeddings, method="kmeans", n_clusters=20, dbscan_eps=0.
 def save_results(embeddings, metadata, labels):
     """
     Save embeddings, metadata, and cluster assignments to disk for downstream use.
+    Outputs:
+        - embeddings.npy: numpy array of embeddings
+        - labels.npy: numpy array of cluster labels
+        - metadata.jsonl: metadata with cluster assignments (one JSON per line)
+        - clusters.json: dict of cluster_id -> list of post IDs
     """
-
     os.makedirs(DATA_DIR, exist_ok=True)
     # Check alignment
     if not (len(embeddings) == len(metadata) == len(labels)):
         raise ValueError(f"Mismatch: embeddings({len(embeddings)}), metadata({len(metadata)}), labels({len(labels)})")
     np.save(os.path.join(DATA_DIR, "embeddings.npy"), embeddings)
+    np.save(os.path.join(DATA_DIR, "labels.npy"), labels)
     # Save metadata.jsonl and build clusters dict
     clusters = {}
     with open(os.path.join(DATA_DIR, "metadata.jsonl"), "w", encoding="utf-8") as f:
@@ -150,17 +121,20 @@ def save_results(embeddings, metadata, labels):
             if cid not in clusters:
                 clusters[cid] = []
             clusters[cid].append(pid)
-    np.save(os.path.join(DATA_DIR, "labels.npy"), labels)
     # Save clusters.json for downstream summarization
     with open(os.path.join(DATA_DIR, "clusters.json"), "w", encoding="utf-8") as f:
         json.dump(clusters, f, ensure_ascii=False, indent=2)
 
 
-# Run the embedding and clustering pipeline
+
 def run_pipeline(method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
     """
     Run the embedding and clustering pipeline.
-    method: 'kmeans' or 'dbscan'
+    Args:
+        method: 'kmeans' or 'dbscan'
+        n_clusters: number of clusters for KMeans
+        dbscan_eps: epsilon for DBSCAN
+        dbscan_min_samples: min samples for DBSCAN
     """
     metadata, texts = load_data()
     embeddings = embed_texts(texts)
