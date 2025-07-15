@@ -4,3 +4,8 @@ tqdm
 feedparser
 sentence-transformers
 scikit-learn
+
+# Core
+numpy
+faiss-cpu  # or faiss-gpu if running with GPU
+
