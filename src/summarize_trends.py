@@ -27,10 +27,14 @@ def tokenize(text: str) -> List[str]:
 
 def clean_unicode(text: str) -> str:
     """
-    Normalize unicode to ASCII, removing smart quotes, dashes, etc.
+    Normalize unicode to ASCII, removing smart quotes, dashes, accents, etc.
     """
     if not isinstance(text, str):
         return ""
+    # Replace common unicode punctuation with ASCII equivalents
+    text = text.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
+    text = text.replace("\u2013", "-").replace("\u2014", "-")
+    # Normalize and encode to ASCII
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 def extract_text_for_summarization(item):
@@ -69,6 +73,21 @@ def get_translator(lang_code):
     if model_name not in get_translator.cache:
         get_translator.cache[model_name] = pipeline("translation", model=model_name, device=0)
     return get_translator.cache[model_name]
+
+def translate_text(text, lang, field_name="text", cid=None):
+    if lang == "en" or not text.strip():
+        return clean_unicode(text)
+    translator = get_translator(lang)
+    if not translator:
+        print(f"[WARN] No translator for lang '{lang}' (cluster {cid}, field {field_name})")
+        return clean_unicode(text)
+    try:
+        translation = translator(text, max_length=2000)[0]["translation_text"]
+        translation = clean_unicode(translation)
+        return translation
+    except Exception as e:
+        print(f"[ERROR] Translation failed for lang '{lang}' (cluster {cid}, field {field_name}): {e}")
+        return clean_unicode(text)
 
 def summarize_clusters(
     clusters_path="data/clusters.json",
@@ -140,7 +159,29 @@ def summarize_clusters(
         def score(post):
             return post.get("score", 0) or post.get("upvotes", 0) or 0
         top_titles = sorted(posts, key=score, reverse=True)[:top_k_titles]
-        top_titles = [p.get("title", "") for p in top_titles if p.get("title")]
+        top_titles_raw = [p.get("title", "") for p in top_titles if p.get("title")]
+        # Detect language for this cluster (use concat of all titles for robustness)
+        all_titles_text = " ".join([p.get("title", "") for p in posts if p.get("title")])
+        try:
+            lang_titles = detect(all_titles_text[:400]) if all_titles_text.strip() else "en"
+        except Exception:
+            lang_titles = "en"
+        # Translate top_titles
+        top_titles_translated = [translate_text(t, lang_titles, field_name="title", cid=cid) for t in top_titles_raw]
+        # Translate top_keywords (join as sentence for batch translation, then split)
+        keywords_text = " ".join(top_keywords)
+        try:
+            lang_keywords = detect(keywords_text[:400]) if keywords_text.strip() else "en"
+        except Exception:
+            lang_keywords = "en"
+        if lang_keywords != "en" and keywords_text.strip():
+            translated_kw = translate_text(keywords_text, lang_keywords, field_name="keywords", cid=cid)
+            top_keywords_translated = [k.strip() for k in translated_kw.split() if k.strip()]
+            # If translation fails or returns empty, fallback to cleaned original
+            if not top_keywords_translated:
+                top_keywords_translated = [clean_unicode(k) for k in top_keywords]
+        else:
+            top_keywords_translated = [clean_unicode(k) for k in top_keywords]
         # Generate summary only for selected clusters
         summary_sentence = ""
         if generate_summary and cid in top_cluster_ids:
@@ -162,31 +203,38 @@ def summarize_clusters(
                     lang = detect(concat_text[:400])
                 except Exception:
                     lang = "en"
-                # Translate to English if needed
                 if lang != "en":
+                    print(f"[INFO] Translating summary input for cluster {cid} from {lang} to en")
                     translator = get_translator(lang)
                     if translator:
                         try:
                             translation = translator(concat_text, max_length=2000)[0]["translation_text"]
                             concat_text = clean_unicode(translation)
-                        except Exception:
+                        except Exception as e:
+                            print(f"[ERROR] Translation failed for summary in cluster {cid}: {e}")
                             summary_sentence = "[No summary – translation failed]"
                             concat_text = ""
+                    else:
+                        print(f"[WARN] No translator for summary in cluster {cid} (lang {lang})")
+                # Clean unicode again after translation
+                concat_text = clean_unicode(concat_text)
                 if not summary_sentence and concat_text:
                     try:
                         summary_out = summarizer(concat_text, max_length=60, min_length=15, do_sample=False)
                         summary_sentence = summary_out[0]["summary_text"].strip()
+                        summary_sentence = clean_unicode(summary_sentence)
                         if not summary_sentence:
                             summary_sentence = "[No summary]"
                     except Exception as e:
+                        print(f"[ERROR] Summarization failed for cluster {cid}: {e}")
                         summary_sentence = f"[No summary]"
         if not summary_sentence:
             summary_sentence = "[No summary]"
         summaries[cid] = {
             "cluster_id": cid,
             "total_posts": len(posts),
-            "top_titles": top_titles,
-            "top_keywords": top_keywords,
+            "top_titles": top_titles_translated,
+            "top_keywords": top_keywords_translated,
             "summary": safe_summary(summary_sentence)
         }
     # Save output
