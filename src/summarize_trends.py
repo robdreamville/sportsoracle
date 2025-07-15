@@ -219,13 +219,32 @@ def summarize_clusters(
         # Use KeyBERT for keyword extraction if enough content
         if all_text and len(all_text.split()) > 5:
             try:
-                keybert_keywords = kw_model.extract_keywords(
-                    all_text,
-                    keyphrase_ngram_range=(1, 2),
-                    stop_words=STOPWORDS,
-                    top_n=top_k_keywords
-                )
-                top_keywords = [kw for kw, score in keybert_keywords if kw]
+                # KeyBERT fails on very long texts, so chunk or truncate
+                max_chunk_words = 400
+                text_words = all_text.split()
+                if len(text_words) > max_chunk_words * 2:
+                    # If extremely long, sample two chunks: start and end
+                    chunks = [
+                        " ".join(text_words[:max_chunk_words]),
+                        " ".join(text_words[-max_chunk_words:])
+                    ]
+                elif len(text_words) > max_chunk_words:
+                    # If moderately long, just use the first chunk
+                    chunks = [" ".join(text_words[:max_chunk_words])]
+                else:
+                    chunks = [all_text]
+                keywords_set = set()
+                for chunk in chunks:
+                    keybert_keywords = kw_model.extract_keywords(
+                        chunk,
+                        keyphrase_ngram_range=(1, 2),
+                        stop_words=STOPWORDS,
+                        top_n=top_k_keywords
+                    )
+                    for kw, score in keybert_keywords:
+                        if kw:
+                            keywords_set.add(kw)
+                top_keywords = list(keywords_set)[:top_k_keywords]
                 if not top_keywords:
                     print(f"[DEBUG] KeyBERT returned empty keyword list for cluster {cid}. Text length: {len(all_text)}. Text: {all_text[:200]}...")
                     raise ValueError("KeyBERT returned empty keyword list")
@@ -289,14 +308,24 @@ def summarize_clusters(
                     if lang == "en":
                         summary_out = summarizer(concat_text, max_length=60, min_length=15, do_sample=False)
                     else:
-                        summary_out = summarizer(
-                            concat_text,
-                            max_length=60,
-                            min_length=15,
-                            do_sample=False
-                        )
-                    summary_sentence = summary_out[0]["summary_text"].strip()
-                    summary_sentence = clean_unicode(summary_sentence)
+                        # mBART: set forced_bos_token_id for target language (English)
+                        from transformers import MBart50TokenizerFast
+                        model_name = "facebook/mbart-large-50-many-to-many-mmt"
+                        tokenizer = MBart50TokenizerFast.from_pretrained(model_name)
+                        inputs = tokenizer(concat_text, return_tensors="pt", truncation=True, max_length=512)
+                        summarizer.model.config.forced_bos_token_id = tokenizer.lang_code_to_id["en_XX"]
+                        import torch
+                        with torch.no_grad():
+                            summary_ids = summarizer.model.generate(
+                                inputs["input_ids"],
+                                attention_mask=inputs["attention_mask"],
+                                max_length=60,
+                                min_length=15,
+                                num_beams=4,
+                                early_stopping=True
+                            )
+                        summary_sentence = tokenizer.batch_decode(summary_ids, skip_special_tokens=True)[0].strip()
+                        summary_sentence = clean_unicode(summary_sentence)
                     if not summary_sentence:
                         print(f"[DEBUG] Empty summary for cluster {cid}. Input: {concat_text[:200]}...")
                         summary_sentence = "[No summary]"
