@@ -27,6 +27,7 @@ lang2translator = {
     "sl": "Helsinki-NLP/opus-mt-sl-en",  # Slovenian
     "hr": "Helsinki-NLP/opus-mt-hr-en",  # Croatian
     "tl": "Helsinki-NLP/opus-mt-tl-en",  # Tagalog
+    "pl": "Helsinki-NLP/opus-mt-pl-en",  # Polish
 }
 _translator_cache = {}
 
@@ -142,8 +143,14 @@ def preprocess_language(
             return detect(concat[:400]) if concat.strip() else "en"
         except Exception:
             return "en"
-    # Add a temporary language field for sorting
+    # Add a temporary language field for sorting and filtering
     ds = ds.map(lambda ex: {**ex, "_tmp_lang": get_lang(ex)})
+    # Only keep posts with supported languages or English
+    supported_langs = set(lang2translator.keys()) | {"en"}
+    before_count = ds.num_rows
+    ds = ds.filter(lambda ex: ex["_tmp_lang"] in supported_langs)
+    after_count = ds.num_rows
+    print(f"[INFO] Filtered posts: {before_count - after_count} removed, {after_count} kept.")
     ds = ds.sort("_tmp_lang")
     ds = ds.map(detect_and_translate_batch, batched=True, batch_size=32)
     ds = ds.remove_columns(["_tmp_lang"])
