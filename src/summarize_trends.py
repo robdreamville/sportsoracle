@@ -52,6 +52,10 @@ def clean_unicode(text: str) -> str:
     """
     if not isinstance(text, str):
         return ""
+    # Remove HTML tags
+    text = re.sub(r"<[^>]+>", "", text)
+    # Remove emojis
+    text = re.sub(r"[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF]", "", text)
     # Replace common unicode punctuation with ASCII equivalents
     text = text.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
     text = text.replace("\u2013", "-").replace("\u2014", "-")
@@ -168,7 +172,8 @@ def summarize_clusters(
     top_k_keywords=10,
     generate_summary=False,
     top_n_clusters=15,
-    summary_models=None
+    summary_models=None,
+    chunk_size=300
 ):
     """
     Summarize clusters with KeyBERT keyword extraction, top titles, and multilingual summarization.
@@ -212,9 +217,9 @@ def summarize_clusters(
     # Initialize KeyBERT with the same embedding model as used for clustering
     # Always use GPU if available
     from sentence_transformers import SentenceTransformer
-    # Use the global torch import, do not shadow or re-import
     device = "cuda" if torch.cuda.is_available() else "cpu"
     embed_model = SentenceTransformer("all-MiniLM-L6-v2", device=device)
+    embed_model = embed_model.to(device)
     kw_model = KeyBERT(model=embed_model)
 
     for cid, posts in cluster_posts.items():
@@ -222,22 +227,13 @@ def summarize_clusters(
         all_text = " ".join([
             extract_text_for_summarization(post) for post in posts
         ]).strip()
+        # Improved chunking for KeyBERT
         top_keywords = []
-        # Use KeyBERT for keyword extraction if enough content
         if all_text and len(all_text.split()) > 5:
             try:
-                max_chunk_words = 400
                 text_words = all_text.split()
-                if len(text_words) > max_chunk_words * 2:
-                    chunks = [
-                        " ".join(text_words[:max_chunk_words]),
-                        " ".join(text_words[-max_chunk_words:])
-                    ]
-                elif len(text_words) > max_chunk_words:
-                    chunks = [" ".join(text_words[:max_chunk_words])]
-                else:
-                    chunks = [all_text]
-                keywords_set = set()
+                chunks = [" ".join(text_words[i:i+chunk_size]) for i in range(0, len(text_words), chunk_size)]
+                keyword_scores = Counter()
                 for chunk in chunks:
                     keybert_keywords = kw_model.extract_keywords(
                         chunk,
@@ -247,13 +243,14 @@ def summarize_clusters(
                     )
                     for kw, score in keybert_keywords:
                         if kw:
-                            keywords_set.add(kw)
-                top_keywords = list(keywords_set)[:top_k_keywords]
+                            keyword_scores[kw] += score
+                # Get top N keywords by aggregated score
+                top_keywords = [kw for kw, _ in keyword_scores.most_common(top_k_keywords)]
                 if not top_keywords:
                     print(f"[DEBUG] KeyBERT returned empty keyword list for cluster {cid}. Text length: {len(all_text)}. Text: {all_text[:200]}...")
                     raise ValueError("KeyBERT returned empty keyword list")
             except Exception as e:
-                print(f"[WARN] KeyBERT failed for cluster {cid}: {e}. Falling back to frequency-based keywords. Text length: {len(all_text)}. Text: {all_text[:200]}...")
+                print(f"[WARN] KeyBERT failed for cluster {cid}: {str(e)} | Text length: {len(all_text)} | Sample: {all_text[:200]}")
                 tokens = [t for t in tokenize(all_text) if t not in STOPWORDS and len(t) > 2]
                 word_freq = Counter(tokens)
                 top_keywords = [w for w, _ in word_freq.most_common(top_k_keywords)]
@@ -267,21 +264,24 @@ def summarize_clusters(
             return post.get("score", 0) or post.get("upvotes", 0) or 0
         top_titles = sorted(posts, key=score, reverse=True)[:top_k_titles]
         top_titles_raw = [p.get("title", "") for p in top_titles if p.get("title")]
+        # --- Enhanced language detection: per-post, then dominant ---
+        post_langs = []
+        for post in posts:
+            try:
+                post_text = extract_text_for_summarization(post)
+                lang = detect(post_text[:400]) if post_text.strip() else "en"
+            except Exception:
+                lang = "en"
+            post_langs.append(lang)
+        # Find dominant language
+        from collections import Counter as Ctr
+        dominant_lang = Ctr(post_langs).most_common(1)[0][0] if post_langs else "en"
         # --- Translate top_titles ---
-        all_titles_text = " ".join(top_titles_raw)
-        try:
-            lang_titles = detect(all_titles_text[:400]) if all_titles_text.strip() else "en"
-        except Exception:
-            lang_titles = "en"
-        top_titles_translated = [translate_text(t, lang_titles, field_name="title", cid=cid) for t in top_titles_raw]
+        top_titles_translated = [translate_text(t, dominant_lang, field_name="title", cid=cid) for t in top_titles_raw]
         # --- Translate top_keywords ---
         keywords_text = " ".join(top_keywords)
-        try:
-            lang_keywords = detect(keywords_text[:400]) if keywords_text.strip() else "en"
-        except Exception:
-            lang_keywords = "en"
-        if lang_keywords != "en" and keywords_text.strip():
-            translated_kw = translate_text(keywords_text, lang_keywords, field_name="keywords", cid=cid)
+        if dominant_lang != "en" and keywords_text.strip():
+            translated_kw = translate_text(keywords_text, dominant_lang, field_name="keywords", cid=cid)
             top_keywords_translated = [k.strip() for k in translated_kw.split() if k.strip()]
             if not top_keywords_translated:
                 top_keywords_translated = [clean_unicode(k) for k in top_keywords]
@@ -299,20 +299,18 @@ def summarize_clusters(
             max_chars = 2000
             if len(concat_text) > max_chars:
                 concat_text = concat_text[:max_chars]
-            if len(concat_text) <= 10:
+            if len(concat_text) <= 50:
                 print(f"[DEBUG] Skipping summary for cluster {cid}: not enough content (len={len(concat_text)})")
                 summary_sentence = "[No summary – low content]"
             else:
-                try:
-                    lang = detect(concat_text[:400])
-                except Exception:
-                    lang = "en"
+                lang = dominant_lang
                 summarizer = get_summarizer(lang)
                 try:
                     if lang == "en":
-                        summary_out = summarizer(concat_text, max_length=60, min_length=15, do_sample=False)
+                        summary_out = summarizer(concat_text, max_length=60, min_length=5, do_sample=False)
+                        summary_sentence = summary_out[0]["summary_text"].strip()
+                        summary_sentence = clean_unicode(summary_sentence)
                     else:
-                        # mBART: set forced_bos_token_id for target language (English)
                         from transformers import MBart50TokenizerFast
                         model_name = "facebook/mbart-large-50-many-to-many-mmt"
                         tokenizer = MBart50TokenizerFast.from_pretrained(model_name)
@@ -323,18 +321,26 @@ def summarize_clusters(
                                 inputs["input_ids"],
                                 attention_mask=inputs["attention_mask"],
                                 max_length=60,
-                                min_length=15,
+                                min_length=5,
                                 num_beams=4,
                                 early_stopping=True
                             )
                         summary_sentence = tokenizer.batch_decode(summary_ids, skip_special_tokens=True)[0].strip()
                         summary_sentence = clean_unicode(summary_sentence)
-                    if not summary_sentence:
-                        print(f"[DEBUG] Empty summary for cluster {cid}. Input: {concat_text[:200]}...")
-                        summary_sentence = "[No summary]"
+                        if not summary_sentence:
+                            raise ValueError("mBART summary empty")
                 except Exception as e:
-                    print(f"[ERROR] Summarization failed for cluster {cid} (lang {lang}): {e}. Input: {concat_text[:200]}...")
-                    summary_sentence = f"[No summary]"
+                    print(f"[ERROR] Summarization failed for cluster {cid} (lang {lang}): {str(e)} | Input len: {len(concat_text)} | Sample: {concat_text[:200]}")
+                    # Fallback: translate to English and summarize with BART
+                    try:
+                        translated_text = translate_text(concat_text, lang, field_name="summary_fallback", cid=cid)
+                        bart_summarizer = get_summarizer("en")
+                        summary_out = bart_summarizer(translated_text, max_length=60, min_length=5, do_sample=False)
+                        summary_sentence = summary_out[0]["summary_text"].strip()
+                        summary_sentence = clean_unicode(summary_sentence)
+                    except Exception as e2:
+                        print(f"[ERROR] Fallback summarization also failed for cluster {cid}: {str(e2)} | Input len: {len(concat_text)} | Sample: {concat_text[:200]}")
+                        summary_sentence = f"[No summary]"
         if not summary_sentence:
             print(f"[DEBUG] Final summary empty for cluster {cid}.")
             summary_sentence = "[No summary]"
