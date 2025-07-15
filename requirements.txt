@@ -9,3 +9,7 @@ scikit-learn
 numpy
 faiss-cpu  # or faiss-gpu if running with GPU
 
+# For summarization
+transformers
+torch
+
