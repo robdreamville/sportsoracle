@@ -87,30 +87,11 @@ def save_results(embeddings, metadata, labels):
     os.makedirs(DATA_DIR, exist_ok=True)
     np.save(os.path.join(DATA_DIR, "embeddings.npy"), embeddings)
     with open(os.path.join(DATA_DIR, "metadata.jsonl"), "w", encoding="utf-8") as f:
-        for item in metadata:
-            # Remove large text_for_embedding to keep metadata slim
-            item.pop("text_for_embedding", None)
-            f.write(json.dumps(item) + "\n")
-    clusters = [{"id": m["id"], "cluster": int(label)} for m, label in zip(metadata, labels)]
-    with open(os.path.join(DATA_DIR, "clusters.json"), "w", encoding="utf-8") as f:
-        json.dump(clusters, f, indent=2)
-    print(f"Saved embeddings ({len(embeddings)}), metadata, and clusters.")
-
-def run_pipeline(method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
-    """
-    Run the embedding and clustering pipeline.
-    method: 'kmeans' or 'dbscan'
-    """
-    metadata, texts = load_data()
-    embeddings = embed_texts(texts)
-    labels = cluster_embeddings(
-        embeddings,
-        method=method,
-        n_clusters=n_clusters,
-        dbscan_eps=dbscan_eps,
-        dbscan_min_samples=dbscan_min_samples
-    )
-    save_results(embeddings, metadata, labels)
+        for item, label in zip(metadata, labels):
+            item_out = dict(item)
+            item_out["cluster"] = int(label)
+            f.write(json.dumps(item_out, ensure_ascii=False) + "\n")
+    np.save(os.path.join(DATA_DIR, "labels.npy"), labels)
 
 # Allow this script to be run standalone for testing
 if __name__ == "__main__":
