@@ -214,18 +214,28 @@ def summarize_clusters(
         # --- Keyword extraction ---
         all_text = " ".join([
             extract_text_for_summarization(post) for post in posts
-        ])
-        # Use KeyBERT for keyword extraction
-        try:
-            keybert_keywords = kw_model.extract_keywords(
-                all_text,
-                keyphrase_ngram_range=(1, 2),
-                stop_words=STOPWORDS,
-                top_n=top_k_keywords
-            )
-            top_keywords = [kw for kw, score in keybert_keywords]
-        except Exception as e:
-            print(f"[WARN] KeyBERT failed for cluster {cid}: {e}. Falling back to frequency-based keywords.")
+        ]).strip()
+        top_keywords = []
+        # Use KeyBERT for keyword extraction if enough content
+        if all_text and len(all_text.split()) > 5:
+            try:
+                keybert_keywords = kw_model.extract_keywords(
+                    all_text,
+                    keyphrase_ngram_range=(1, 2),
+                    stop_words=STOPWORDS,
+                    top_n=top_k_keywords
+                )
+                top_keywords = [kw for kw, score in keybert_keywords if kw]
+                # Fallback if KeyBERT returns empty
+                if not top_keywords:
+                    raise ValueError("KeyBERT returned empty keyword list")
+            except Exception as e:
+                print(f"[WARN] KeyBERT failed for cluster {cid}: {e}. Falling back to frequency-based keywords.")
+                tokens = [t for t in tokenize(all_text) if t not in STOPWORDS and len(t) > 2]
+                word_freq = Counter(tokens)
+                top_keywords = [w for w, _ in word_freq.most_common(top_k_keywords)]
+        else:
+            # Not enough content for KeyBERT, use frequency-based
             tokens = [t for t in tokenize(all_text) if t not in STOPWORDS and len(t) > 2]
             word_freq = Counter(tokens)
             top_keywords = [w for w, _ in word_freq.most_common(top_k_keywords)]
