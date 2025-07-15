@@ -1,11 +1,10 @@
+
 import os
 import json
 import re
-
+import unicodedata
 from collections import Counter, defaultdict
 from typing import List, Dict
-
-# For summarization
 from transformers import pipeline
 
 STOPWORDS = set([
@@ -24,23 +23,32 @@ def tokenize(text: str) -> List[str]:
     # Simple word tokenizer, lowercased, strips punctuation
     return re.findall(r"\b\w+\b", text.lower())
 
+
+def clean_unicode(text: str) -> str:
+    """
+    Normalize unicode to ASCII, removing smart quotes, dashes, etc.
+    """
+    if not isinstance(text, str):
+        return ""
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
 def extract_text_for_summarization(item):
     """
-    Compose a text string for summarization, handling Reddit and ESPN formats.
+    Compose a text string for summarization, handling Reddit and ESPN formats, and clean unicode.
     """
     if item.get("source") == "reddit":
         base_text = item.get("title", "") or ""
         selftext = item.get("selftext", "") or ""
-        return f"{base_text}\n\n{selftext}".strip()
+        text = f"{base_text}\n\n{selftext}".strip()
     elif item.get("source") == "espn":
         title = item.get("title", "") or ""
         summary = item.get("summary", "") or ""
-        text = item.get("text", "") or ""
+        text_field = item.get("text", "") or ""
         category = item.get("category", "") or ""
-        combined_text = f"{title}\n\n{summary}\n\n{text}\n\nCategory: {category}".strip()
-        return combined_text
+        text = f"{title}\n\n{summary}\n\n{text_field}\n\nCategory: {category}".strip()
     else:
-        return item.get("text", "") or ""
+        text = item.get("text", "") or ""
+    return clean_unicode(text)
 
 def summarize_clusters(
     clusters_path="data/clusters.json",
@@ -96,6 +104,11 @@ def summarize_clusters(
         summarizer = pipeline("summarization", model=summary_model, device=0)
 
     summaries = {}
+    def safe_summary(summary_sentence):
+        if not summary_sentence or not summary_sentence.strip():
+            return "[EMPTY]"
+        return summary_sentence
+
     for cid, posts in cluster_posts.items():
         # Use the same text extraction logic as embed_cluster.py
         all_text = " ".join([
@@ -117,22 +130,26 @@ def summarize_clusters(
             concat_text = " ".join([
                 extract_text_for_summarization(p) for p in top_posts
             ])
+            concat_text = clean_unicode(concat_text)
+            concat_text = concat_text.strip()
             # Truncate input for summarizer (BART max input ~1024 tokens, but keep shorter for safety)
             max_chars = 2000
             if len(concat_text) > max_chars:
                 concat_text = concat_text[:max_chars]
-            # Generate summary
-            try:
-                summary_out = summarizer(concat_text, max_length=60, min_length=15, do_sample=False)
-                summary_sentence = summary_out[0]["summary_text"].strip()
-            except Exception as e:
-                summary_sentence = f"[Summarization error: {e}]"
+            if not concat_text:
+                summary_sentence = "[No meaningful content to summarize]"
+            else:
+                try:
+                    summary_out = summarizer(concat_text, max_length=60, min_length=15, do_sample=False)
+                    summary_sentence = summary_out[0]["summary_text"].strip()
+                except Exception as e:
+                    summary_sentence = f"[Summarization error: {e}]"
         summaries[cid] = {
             "cluster_id": cid,
             "total_posts": len(posts),
             "top_titles": top_titles,
             "top_keywords": top_keywords,
-            "summary": summary_sentence
+            "summary": safe_summary(summary_sentence)
         }
     # Save output
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
