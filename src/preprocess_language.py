@@ -19,44 +19,78 @@ lang2translator = {
     "fr": "Helsinki-NLP/opus-mt-fr-en"
 }
 _translator_cache = {}
-def translate_to_en(text, lang):
-    if lang == "en" or not text.strip():
-        return text
+
+def translate_to_en_batch(texts, lang):
+    """
+    Batch translation for a list of texts in the same language.
+    """
+    if lang == "en":
+        return texts
     if lang not in lang2translator:
-        return text
+        return texts
     model_name = lang2translator[lang]
     if model_name not in _translator_cache:
-        _translator_cache[model_name] = pipeline("translation", model=model_name)
+        _translator_cache[model_name] = pipeline("translation", model=model_name, device=0 if torch.cuda.is_available() else -1)
     try:
-        return _translator_cache[model_name](text, max_length=2000)[0]["translation_text"]
+        results = _translator_cache[model_name](texts, max_length=2000)
+        return [r["translation_text"] for r in results]
     except Exception:
-        return text
+        return texts
 
-def detect_and_translate_post(post):
-    # Always treat missing or None fields as empty string
-    title = post.get("title") or ""
-    selftext = post.get("selftext") or ""
-    summary = post.get("summary") or ""
-    text = post.get("text") or ""
-    concat_text = f"{title} {selftext} {summary} {text}"
-    try:
-        lang = detect(concat_text[:400]) if concat_text.strip() else "en"
-    except Exception:
-        lang = "en"
-    post["detected_language"] = lang
-    for field, value in [("title", title), ("selftext", selftext), ("summary", summary), ("text", text)]:
-        post[field + "_en"] = translate_to_en(value, lang) if value else ""
-    return post
 
+def detect_and_translate_batch(batch):
+    # Each field is a list
+    titles = [(t or "") for t in batch.get("title", [])]
+    selftexts = [(t or "") for t in batch.get("selftext", [])]
+    summaries = [(t or "") for t in batch.get("summary", [])]
+    texts = [(t or "") for t in batch.get("text", [])]
+    concat_texts = [f"{a} {b} {c} {d}" for a, b, c, d in zip(titles, selftexts, summaries, texts)]
+    # Detect language for each post
+    langs = []
+    for ct in concat_texts:
+        try:
+            lang = detect(ct[:400]) if ct.strip() else "en"
+        except Exception:
+            lang = "en"
+        langs.append(lang)
+    # For each field, translate in batch by language
+    def batch_translate_field(field_list, langs):
+        out = [None] * len(field_list)
+        # Group by language for efficient batching
+        from collections import defaultdict
+        lang2idx = defaultdict(list)
+        for i, l in enumerate(langs):
+            lang2idx[l].append(i)
+        for l, idxs in lang2idx.items():
+            texts_to_translate = [field_list[i] for i in idxs]
+            translated = translate_to_en_batch(texts_to_translate, l)
+            for i, val in zip(idxs, translated):
+                out[i] = val
+        return out
+    title_en = batch_translate_field(titles, langs)
+    selftext_en = batch_translate_field(selftexts, langs)
+    summary_en = batch_translate_field(summaries, langs)
+    text_en = batch_translate_field(texts, langs)
+    # Return new batch dict
+    batch_out = dict(batch)
+    batch_out["detected_language"] = langs
+    batch_out["title_en"] = title_en
+    batch_out["selftext_en"] = selftext_en
+    batch_out["summary_en"] = summary_en
+    batch_out["text_en"] = text_en
+    return batch_out
+
+
+import torch
 def preprocess_language(
     in_path=os.path.join(DATA_DIR, "raw_combined.jsonl"),
     out_path=os.path.join(DATA_DIR, "raw_combined_en.jsonl")
 ):
     """
-    Reads a JSONL file, detects language, translates to English, and writes a new JSONL file with *_en fields.
+    Reads a JSONL file, detects language, translates to English in batches, and writes a new JSONL file with *_en fields.
     """
     ds = load_dataset("json", data_files=in_path, split="train")
-    ds = ds.map(detect_and_translate_post)
+    ds = ds.map(detect_and_translate_batch, batched=True, batch_size=32)
     ds.to_json(out_path, orient="records", lines=True, force_ascii=False)
     print(f"[INFO] Wrote language-normalized data to {out_path}")
 
