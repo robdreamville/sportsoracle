@@ -10,8 +10,12 @@ import json
 from src.reddit_scraper import scrape_reddit_posts
 from src.espn_rss_scraper import scrape_espn_rss
 
-# Directory where all scraped data will be stored
-DATA_DIR = "/content/sportsoracle/data"
+# Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
+def get_project_root():
+    return os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
+
+PROJECT_ROOT = get_project_root()
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
 def run_scrape():
     """

@@ -1,0 +1,79 @@
+# SportsOracle Project Architecture & Structure
+
+## Overview
+SportsOracle is a modular pipeline for scraping, embedding, clustering, and summarizing sports news and social media content. It supports multilingual data, robust keyword and summary extraction, and is designed for extensibility and maintainability.
+
+---
+
+## Directory Structure
+
+- `main.py`                : Pipeline entrypoint; orchestrates scraping, embedding, clustering, and (planned) summarization/indexing.
+- `run_scrape.py`          : Runs Reddit and ESPN scrapers, saves combined data.
+- `requirements.txt`       : Python dependencies (transformers, keybert, scikit-learn, etc).
+- `README.md`              : Project documentation.
+- `data/`                  : Raw and processed data files.
+    - `raw_combined.json`  : Combined Reddit + ESPN posts.
+    - `raw_espn.json`      : ESPN RSS articles.
+    - `raw_posts.json`     : Reddit posts.
+    - `clusters.json`      : Cluster assignments for each post.
+    - `metadata.jsonl`     : Metadata for each post (one JSON per line).
+- `outputs/`               : Final outputs.
+    - `trends_summary.json`: Cluster-level summaries, keywords, and top titles.
+- `src/`                   : Source code modules.
+    - `reddit_scraper.py`  : Reddit scraping using PRAW.
+    - `espn_rss_scraper.py`: ESPN RSS scraping using feedparser.
+    - `embed_cluster.py`   : Embedding (SentenceTransformers) and clustering (KMeans/DBSCAN).
+    - `summarize_trends.py`: Cluster summarization, translation, keyword extraction, unicode cleaning.
+    - `chatbot_interface.py`: (Planned) Chatbot/QA interface.
+    - `faiss_indexer.py`   : (Planned) FAISS semantic search indexer.
+
+---
+
+## Pipeline Flow
+
+1. **Scraping**
+   - `run_scrape.py` calls:
+     - `src/reddit_scraper.py` (Reddit posts)
+     - `src/espn_rss_scraper.py` (ESPN articles)
+   - Output: `data/raw_combined.json`
+
+2. **Embedding & Clustering**
+   - `src/embed_cluster.py` loads combined data, generates embeddings (all-MiniLM-L6-v2), clusters with KMeans or DBSCAN.
+   - Outputs: `data/embeddings.npy`, `data/clusters.json`, `data/metadata.jsonl`
+
+3. **Summarization & Keyword Extraction**
+   - `src/summarize_trends.py` loads clusters and metadata, cleans and translates text, extracts keywords (KeyBERT + fallback), generates summaries (BART/mBART), outputs `outputs/trends_summary.json`.
+
+4. **(Planned) Semantic Search & Dashboard**
+   - `src/faiss_indexer.py` (planned): Build FAISS index for semantic search.
+   - `src/chatbot_interface.py` (planned): Interactive QA/chatbot interface.
+   - Dashboard UI (planned): Streamlit or similar for trend exploration.
+
+---
+
+## Key Features
+- **Multilingual Support**: Translation and summarization for non-English clusters (Helsinki-NLP, mBART).
+- **Robust Keyword Extraction**: KeyBERT with chunking for long texts, fallback to frequency-based keywords.
+- **Unicode Normalization**: Ensures all output is ASCII-clean.
+- **Clustering Options**: KMeans (default) or DBSCAN (configurable).
+- **Extensible**: Modular codebase for easy addition of new sources, models, or UI components.
+
+---
+
+## Planned Extensions
+- FAISS-based semantic search and retrieval.
+- Interactive dashboard for trend exploration and filtering.
+- Chatbot/QA interface for querying sports trends.
+- Automated scheduling and cloud deployment.
+
+---
+
+## Usage
+- Run the full pipeline: `python main.py`
+- Individual steps can be run via their respective scripts.
+
+---
+
+## Authors
+- Project owner: robdreamville
+- AI assistant: GitHub Copilot

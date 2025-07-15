@@ -11,8 +11,12 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.cluster import KMeans, DBSCAN
 
-# Directory where all processed data will be stored
-DATA_DIR = "/content/sportsoracle/data"
+# Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
+def get_project_root():
+    return os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
+
+PROJECT_ROOT = get_project_root()
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
 def load_data(path=os.path.join(DATA_DIR, "raw_combined.json")):
     """

@@ -12,11 +12,15 @@ from tqdm import tqdm
 
 load_dotenv()
 
-def scrape_reddit_posts(subreddits, limit=200, data_dir="data"):
+def scrape_reddit_posts(subreddits, limit=200, data_dir=None):
     """
     Scrape posts from the given list of subreddits using PRAW and save to disk.
     Returns a list of post dicts.
     """
+    # Dynamic project root for cross-platform compatibility
+    if data_dir is None:
+        project_root = os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
+        data_dir = os.path.join(project_root, "data")
     reddit = Reddit(
         client_id=os.getenv("REDDIT_CLIENT_ID"),
         client_secret=os.getenv("REDDIT_CLIENT_SECRET"),

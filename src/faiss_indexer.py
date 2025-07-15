@@ -10,7 +10,12 @@ import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
 
-DATA_DIR = "/content/sportsoracle/data"
+# Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
+def get_project_root():
+    return os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
+
+PROJECT_ROOT = get_project_root()
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
 def build_faiss_index(
     embeddings_path=os.path.join(DATA_DIR, "embeddings.npy"),

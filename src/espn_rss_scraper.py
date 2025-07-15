@@ -15,12 +15,17 @@ FEEDS = {
     "Soccer": "https://www.espn.com/espn/rss/soccer/news",
 }
 
-def scrape_espn_rss(data_dir="data"):
+def scrape_espn_rss(data_dir=None):
     """
     Scrape the latest articles from ESPN RSS feeds defined in FEEDS.
     Writes results to data/raw_espn.json and returns the list of articles.
     """
     articles = []
+
+    # Dynamic project root for cross-platform compatibility
+    if data_dir is None:
+        project_root = os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
+        data_dir = os.path.join(project_root, "data")
 
     # Loop through each sport feed
     for category, url in FEEDS.items():

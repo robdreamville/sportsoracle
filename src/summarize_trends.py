@@ -5,6 +5,7 @@
 # and generates cluster-level summaries, top keywords, and top titles.
 # Handles multilingual input and ensures all output is ASCII-clean and in English.
 
+
 import os
 import torch
 from datasets import load_dataset, concatenate_datasets, Dataset
@@ -13,10 +14,21 @@ import re
 import unicodedata
 from collections import Counter, defaultdict
 from typing import List, Dict
-
 from transformers import pipeline
 from langdetect import detect
 from keybert import KeyBERT
+
+# -------------------------
+# Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
+# -------------------------
+
+def get_project_root():
+    # Use environment variable if set, else default to cwd
+    return os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
+
+PROJECT_ROOT = get_project_root()
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+OUTPUTS_DIR = os.path.join(PROJECT_ROOT, "outputs")
 
 # -------------------------
 # Stopwords for keyword filtering
@@ -167,9 +179,9 @@ def translate_text(text, lang, field_name="text", cid=None):
 # Main cluster summarization pipeline
 # -------------------------
 def summarize_clusters(
-    clusters_path="data/clusters.json",
-    metadata_path="data/metadata.jsonl",
-    out_path="outputs/trends_summary.json",
+    clusters_path=None,
+    metadata_path=None,
+    out_path=None,
     top_k_titles=5,
     top_k_keywords=10,
     generate_summary=False,
@@ -180,7 +192,15 @@ def summarize_clusters(
     """
     Summarize clusters with KeyBERT keyword extraction, top titles, and multilingual summarization.
     """
-    # Load clusters and metadata (keep as is for now, but recommend Datasets for future scalability)
+    # Set default paths if not provided
+    if clusters_path is None:
+        clusters_path = os.path.join(DATA_DIR, "clusters.json")
+    if metadata_path is None:
+        metadata_path = os.path.join(DATA_DIR, "metadata.jsonl")
+    if out_path is None:
+        out_path = os.path.join(OUTPUTS_DIR, "trends_summary.json")
+
+    # Load clusters and metadata
     with open(clusters_path, "r", encoding="utf-8") as f:
         clusters = json.load(f)
     metadata = []
