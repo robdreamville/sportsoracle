@@ -112,20 +112,24 @@ def get_summarizer(lang_code):
         get_summarizer.cache = {}
     if lang_code == "en":
         model_name = "facebook/bart-large-cnn"
-        tokenizer_kwargs = {}
+        cache_key = (model_name, "en")
+        if cache_key not in get_summarizer.cache:
+            get_summarizer.cache[cache_key] = pipeline(
+                "summarization",
+                model=model_name,
+                device=0
+            )
+        return get_summarizer.cache[cache_key]
     else:
         model_name = "facebook/mbart-large-50-many-to-many-mmt"
-        # Set forced_bos_token_id for English output if desired, else summarize in detected language
-        tokenizer_kwargs = {"src_lang": lang_code, "tgt_lang": "en_XX"}
-    cache_key = (model_name, tuple(tokenizer_kwargs.items()))
-    if cache_key not in get_summarizer.cache:
-        get_summarizer.cache[cache_key] = pipeline(
-            "summarization",
-            model=model_name,
-            device=0,
-            tokenizer_kwargs=tokenizer_kwargs
-        )
-    return get_summarizer.cache[cache_key]
+        cache_key = (model_name, lang_code)
+        if cache_key not in get_summarizer.cache:
+            get_summarizer.cache[cache_key] = pipeline(
+                "summarization",
+                model=model_name,
+                device=0
+            )
+        return get_summarizer.cache[cache_key]
 
 # -------------------------
 # Translate any text to English if needed, with logging
