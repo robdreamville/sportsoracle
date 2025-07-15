@@ -54,10 +54,18 @@ def run_scrape():
     all_items = reddit_posts + espn_items
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    # Save combined data to disk (legacy, for downstream compatibility)
+    # Save combined data to disk (legacy JSON)
     combined_path = os.path.join(DATA_DIR, "raw_combined.json")
     with open(combined_path, "w", encoding="utf-8") as f:
         json.dump(all_items, f, indent=2, ensure_ascii=False)
+
+    # Also write combined data as JSONL for Datasets compatibility
+    combined_jsonl_path = os.path.join(DATA_DIR, "raw_combined.jsonl")
+    with open(combined_jsonl_path, "w", encoding="utf-8") as f:
+        for item in all_items:
+            json.dump(item, f, ensure_ascii=False)
+            f.write("\n")
+    print(f"✅ Combined JSONL written to {combined_jsonl_path}")
 
     print(f"\n🔗 Combined {len(all_items)} items → {combined_path}")
     print("✅ Scraping complete!\n")
