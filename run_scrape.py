@@ -34,14 +34,30 @@ def run_scrape():
     print("\n🔵 Scraping ESPN RSS…")
     espn_items = scrape_espn_rss(data_dir=DATA_DIR)
 
+    # Write Reddit posts as JSONL
+    reddit_jsonl_path = os.path.join(DATA_DIR, "raw_reddit.jsonl")
+    with open(reddit_jsonl_path, "w", encoding="utf-8") as f:
+        for post in reddit_posts:
+            json.dump(post, f, ensure_ascii=False)
+            f.write("\n")
+    print(f"✅ Reddit JSONL written to {reddit_jsonl_path}")
+
+    # Write ESPN items as JSONL
+    espn_jsonl_path = os.path.join(DATA_DIR, "raw_espn.jsonl")
+    with open(espn_jsonl_path, "w", encoding="utf-8") as f:
+        for item in espn_items:
+            json.dump(item, f, ensure_ascii=False)
+            f.write("\n")
+    print(f"✅ ESPN JSONL written to {espn_jsonl_path}")
+
     # Combine all items from both sources
     all_items = reddit_posts + espn_items
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    # Save combined data to disk
+    # Save combined data to disk (legacy, for downstream compatibility)
     combined_path = os.path.join(DATA_DIR, "raw_combined.json")
-    with open(combined_path, "w") as f:
-        json.dump(all_items, f, indent=2)
+    with open(combined_path, "w", encoding="utf-8") as f:
+        json.dump(all_items, f, indent=2, ensure_ascii=False)
 
     print(f"\n🔗 Combined {len(all_items)} items → {combined_path}")
     print("✅ Scraping complete!\n")

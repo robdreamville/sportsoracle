@@ -51,11 +51,18 @@ def scrape_espn_rss(data_dir=None):
                 "published": entry.get("published", "")
             })
 
-    # Save all articles to disk
+    # Save all articles to disk (legacy JSON)
     os.makedirs(data_dir, exist_ok=True)
     out_path = os.path.join(data_dir, "raw_espn.json")
-    with open(out_path, "w") as f:
-        json.dump(articles, f, indent=2)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(articles, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ Saved {len(articles)} ESPN items to {out_path}")
+    # Also write as JSONL for Datasets compatibility
+    out_jsonl = os.path.join(data_dir, "raw_espn.jsonl")
+    with open(out_jsonl, "w", encoding="utf-8") as f:
+        for article in articles:
+            json.dump(article, f, ensure_ascii=False)
+            f.write("\n")
+
+    print(f"✅ Saved {len(articles)} ESPN items to {out_path} and {out_jsonl}")
     return articles

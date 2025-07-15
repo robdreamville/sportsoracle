@@ -48,11 +48,18 @@ def scrape_reddit_posts(subreddits, limit=200, data_dir=None):
                     "created_utc": post.created_utc,
                 })
 
-    # Save all posts to disk
+    # Save all posts to disk (legacy JSON)
     os.makedirs(data_dir, exist_ok=True)
     out_path = os.path.join(data_dir, "raw_posts.json")
-    with open(out_path, "w") as f:
-        json.dump(posts, f, indent=2)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(posts, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ {len(posts)} posts saved to {out_path}")
+    # Also write as JSONL for Datasets compatibility
+    out_jsonl = os.path.join(data_dir, "raw_reddit.jsonl")
+    with open(out_jsonl, "w", encoding="utf-8") as f:
+        for post in posts:
+            json.dump(post, f, ensure_ascii=False)
+            f.write("\n")
+
+    print(f"✅ {len(posts)} posts saved to {out_path} and {out_jsonl}")
     return posts
