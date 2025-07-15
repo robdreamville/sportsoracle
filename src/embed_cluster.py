@@ -21,14 +21,14 @@ def get_project_root():
 PROJECT_ROOT = get_project_root()
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
-def load_data(path=os.path.join(DATA_DIR, "raw_combined.jsonl")):
+def load_data(path=os.path.join(DATA_DIR, "raw_combined_en.jsonl")):
     """
-    Load combined Reddit + ESPN data from JSONL using Hugging Face Datasets.
+    Load language-normalized Reddit + ESPN data from JSONL using Hugging Face Datasets.
+    Only uses *_en fields for embedding.
     Returns:
         metadata: list of dicts (original data, deduped)
-        texts: list of str (text for embedding)
+        texts: list of str (text for embedding, always English)
     """
-    # Load as Hugging Face Dataset for efficient processing
     ds = load_dataset("json", data_files=path, split="train")
 
     # Filter out items with missing/null/empty IDs
@@ -47,19 +47,19 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined.jsonl")):
         return {k: [v for v, keep_flag in zip(vals, keep) if keep_flag] for k, vals in batch.items()}
     ds = ds.map(lambda x: x, batched=True).map(dedup_by_id, batched=True)
 
-    # Add text_for_embedding field
+    # Add text_for_embedding field (always English)
     def build_text_for_embedding(example):
         if example["source"] == "reddit":
-            base_text = example.get("title", "") or ""
-            selftext = example.get("selftext", "") or ""
+            base_text = example.get("title_en", "") or ""
+            selftext = example.get("selftext_en", "") or ""
             text_for_embedding = f"{base_text}\n\n{selftext}".strip()
         elif example["source"] == "espn":
-            title = example.get("title", "") or ""
-            summary = example.get("summary", "") or ""
-            text = example.get("text", "") or ""
+            title = example.get("title_en", "") or ""
+            summary = example.get("summary_en", "") or ""
+            text = example.get("text_en", "") or ""
             text_for_embedding = f"{title}\n\n{summary}\n\n{text}".strip()
         else:
-            text_for_embedding = example.get("text", "")
+            text_for_embedding = example.get("text_en", "")
         example["text_for_embedding"] = text_for_embedding
         return example
     ds = ds.map(build_text_for_embedding)
