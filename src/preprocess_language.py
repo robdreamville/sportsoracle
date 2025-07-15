@@ -33,17 +33,19 @@ def translate_to_en(text, lang):
         return text
 
 def detect_and_translate_post(post):
-    text = post.get("title", "") + " " + post.get("selftext", "") + " " + post.get("summary", "") + " " + post.get("text", "")
+    # Always treat missing or None fields as empty string
+    title = post.get("title") or ""
+    selftext = post.get("selftext") or ""
+    summary = post.get("summary") or ""
+    text = post.get("text") or ""
+    concat_text = f"{title} {selftext} {summary} {text}"
     try:
-        lang = detect(text[:400]) if text.strip() else "en"
+        lang = detect(concat_text[:400]) if concat_text.strip() else "en"
     except Exception:
         lang = "en"
     post["detected_language"] = lang
-    for field in ["title", "selftext", "summary", "text"]:
-        if field in post and isinstance(post[field], str):
-            post[field + "_en"] = translate_to_en(post[field], lang)
-        else:
-            post[field + "_en"] = ""
+    for field, value in [("title", title), ("selftext", selftext), ("summary", summary), ("text", text)]:
+        post[field + "_en"] = translate_to_en(value, lang) if value else ""
     return post
 
 def preprocess_language(
