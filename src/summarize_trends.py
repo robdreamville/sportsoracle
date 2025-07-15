@@ -56,6 +56,8 @@ def clean_unicode(text: str) -> str:
     text = re.sub(r"<[^>]+>", "", text)
     # Remove emojis
     text = re.sub(r"[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF]", "", text)
+    # Remove special characters (keep alphanumeric and spaces)
+    text = re.sub(r"[^a-zA-Z0-9\s]", "", text)
     # Replace common unicode punctuation with ASCII equivalents
     text = text.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
     text = text.replace("\u2013", "-").replace("\u2014", "-")
@@ -219,7 +221,7 @@ def summarize_clusters(
     from sentence_transformers import SentenceTransformer
     device = "cuda" if torch.cuda.is_available() else "cpu"
     embed_model = SentenceTransformer("all-MiniLM-L6-v2", device=device)
-    embed_model = embed_model.to(device)
+    chunk_size=250
     kw_model = KeyBERT(model=embed_model)
 
     for cid, posts in cluster_posts.items():
@@ -277,8 +279,6 @@ def summarize_clusters(
         from collections import Counter as Ctr
         dominant_lang = Ctr(post_langs).most_common(1)[0][0] if post_langs else "en"
         # --- Translate top_titles ---
-        top_titles_translated = [translate_text(t, dominant_lang, field_name="title", cid=cid) for t in top_titles_raw]
-        # --- Translate top_keywords ---
         keywords_text = " ".join(top_keywords)
         if dominant_lang != "en" and keywords_text.strip():
             translated_kw = translate_text(keywords_text, dominant_lang, field_name="keywords", cid=cid)
