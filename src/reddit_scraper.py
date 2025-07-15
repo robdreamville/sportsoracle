@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 load_dotenv()
 
-def scrape_reddit_posts(subreddits, limit=200):
+def scrape_reddit_posts(subreddits, limit=200, data_dir="data"):
     reddit = Reddit(
         client_id=os.getenv("REDDIT_CLIENT_ID"),
         client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
@@ -32,8 +32,10 @@ def scrape_reddit_posts(subreddits, limit=200):
                     "created_utc": post.created_utc,
                 })
 
-    os.makedirs("data", exist_ok=True)
-    with open("data/raw_posts.json", "w") as f:
+    os.makedirs(data_dir, exist_ok=True)
+    out_path = os.path.join(data_dir, "raw_posts.json")
+    with open(out_path, "w") as f:
         json.dump(posts, f, indent=2)
-    print(f"✅ {len(posts)} posts saved to data/raw_posts.json")
+
+    print(f"✅ {len(posts)} posts saved to {out_path}")
     return posts

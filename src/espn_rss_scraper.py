@@ -9,7 +9,7 @@ FEEDS = {
     "Soccer": "https://www.espn.com/espn/rss/soccer/news",
 }
 
-def scrape_espn_rss():
+def scrape_espn_rss(data_dir="data"):
     """
     Scrape the latest articles from ESPN RSS feeds defined above,
     then write them to data/raw_espn.json and return the list.
@@ -40,11 +40,8 @@ def scrape_espn_rss():
                 "published": entry.get("published", "")
             })
 
-    # 3. Ensure the data directory exists
-    os.makedirs("data", exist_ok=True)
-
-    # 4. Write out to JSON
-    out_path = "data/raw_espn.json"
+    os.makedirs(data_dir, exist_ok=True)
+    out_path = os.path.join(data_dir, "raw_espn.json")
     with open(out_path, "w") as f:
         json.dump(articles, f, indent=2)
 
