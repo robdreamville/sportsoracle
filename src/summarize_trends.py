@@ -238,22 +238,25 @@ def summarize_clusters(
     if out_path is None:
         out_path = os.path.join(OUTPUTS_DIR, "trends_summary.json")
 
-    # Use Hugging Face Datasets for robust, universal loading
+    # Use Hugging Face Datasets for robust, universal loading (metadata only)
     from datasets import load_dataset, Dataset, concatenate_datasets
-    # Load clusters
-    clusters_ds = load_dataset('json', data_files=clusters_path, split='train')
-    # Load metadata (fix: do NOT use field=None for .jsonl, just use default)
+    # Load clusters.json as dict and flatten to list of {cluster, id}
+    with open(clusters_path, "r", encoding="utf-8") as f:
+        clusters_dict = json.load(f)
+    cluster_entries = []
+    for cid, post_ids in clusters_dict.items():
+        for pid in post_ids:
+            cluster_entries.append({"cluster": int(cid), "id": str(pid)})
+    # Load metadata
     if metadata_path.endswith('.jsonl'):
         metadata_ds = load_dataset('json', data_files=metadata_path, split='train')
     else:
         metadata_ds = load_dataset('json', data_files=metadata_path, split='train')
-    # Debug: print first few metadata items to verify structure
-    print("[DEBUG] First 3 metadata items:", [metadata_ds[i] for i in range(min(3, len(metadata_ds)))])
     # Build id -> metadata mapping (normalize IDs to string)
     id2meta = {str(item['id']): item for item in metadata_ds}
     # Group posts by cluster, log missing metadata
     cluster_posts = defaultdict(list)
-    for entry in clusters_ds:
+    for entry in cluster_entries:
         cid = entry['cluster']
         pid = entry['id']
         meta = id2meta.get(str(pid))
