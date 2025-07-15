@@ -1,3 +1,10 @@
+# =========================
+# SportsOracle: Trend Summarization Pipeline
+# =========================
+# This script loads clustered sports data, cleans and translates all text to English,
+# and generates cluster-level summaries, top keywords, and top titles.
+# Handles multilingual input and ensures all output is ASCII-clean and in English.
+
 import os
 import json
 import re
@@ -8,6 +15,9 @@ from typing import List, Dict
 from transformers import pipeline
 from langdetect import detect
 
+# -------------------------
+# Stopwords for keyword filtering
+# -------------------------
 STOPWORDS = set([
     'the', 'and', 'to', 'of', 'in', 'a', 'is', 'for', 'on', 'with', 'at', 'by', 'an', 'be', 'as', 'from', 'that',
     'it', 'are', 'was', 'this', 'will', 'has', 'have', 'but', 'not', 'or', 'its', 'after', 'his', 'he', 'she', 'they',
@@ -20,14 +30,22 @@ STOPWORDS = set([
     'score', 'scored', 'scoring', 'points', 'point', 'home', 'away', 'vs', 'vs.', 'espn', 'reddit', 'category', 'him', 'some'
 ])
 
+# -------------------------
+# Tokenization utility
+# -------------------------
 def tokenize(text: str) -> List[str]:
-    # Simple word tokenizer, lowercased, strips punctuation
+    """
+    Tokenize text into lowercase words, stripping punctuation.
+    """
     return re.findall(r"\b\w+\b", text.lower())
 
-
+# -------------------------
+# Unicode normalization utility
+# -------------------------
 def clean_unicode(text: str) -> str:
     """
     Normalize unicode to ASCII, removing smart quotes, dashes, accents, etc.
+    Handles common European punctuation and diacritics.
     """
     if not isinstance(text, str):
         return ""
@@ -37,6 +55,9 @@ def clean_unicode(text: str) -> str:
     # Normalize and encode to ASCII
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
+# -------------------------
+# Compose text for summarization (Reddit/ESPN aware)
+# -------------------------
 def extract_text_for_summarization(item):
     """
     Compose a text string for summarization, handling Reddit and ESPN formats, and clean unicode.
@@ -55,9 +76,13 @@ def extract_text_for_summarization(item):
         text = clean_unicode(item.get("text", "") or "")
     return text
 
+# -------------------------
+# Translation pipeline cache and utility
+# -------------------------
 def get_translator(lang_code):
     """
     Return a translation pipeline for the given language code to English.
+    Uses Hugging Face Helsinki-NLP models for major European languages.
     """
     lang2translator = {
         "es": "Helsinki-NLP/opus-mt-es-en",
@@ -74,7 +99,14 @@ def get_translator(lang_code):
         get_translator.cache[model_name] = pipeline("translation", model=model_name, device=0)
     return get_translator.cache[model_name]
 
+# -------------------------
+# Translate any text to English if needed, with logging
+# -------------------------
 def translate_text(text, lang, field_name="text", cid=None):
+    """
+    Translate the given text to English using the appropriate translation model,
+    based on the detected or provided language code.
+    """
     if lang == "en" or not text.strip():
         return clean_unicode(text)
     translator = get_translator(lang)
@@ -89,6 +121,9 @@ def translate_text(text, lang, field_name="text", cid=None):
         print(f"[ERROR] Translation failed for lang '{lang}' (cluster {cid}, field {field_name}): {e}")
         return clean_unicode(text)
 
+# -------------------------
+# Main cluster summarization pipeline
+# -------------------------
 def summarize_clusters(
     clusters_path="data/clusters.json",
     metadata_path="data/metadata.jsonl",
@@ -101,13 +136,13 @@ def summarize_clusters(
 ):
     """
     Summarize clusters with keyword extraction, top titles, and optional abstractive summary using Hugging Face transformers.
+    All output is translated to English and ASCII-cleaned.
     Only summarizes top N clusters for NBA and soccer categories.
     Handles Reddit and ESPN data formats for text extraction.
     """
-    # Load clusters
+    # Load clusters and metadata
     with open(clusters_path, "r", encoding="utf-8") as f:
         clusters = json.load(f)
-    # Load metadata
     metadata = []
     with open(metadata_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -137,8 +172,7 @@ def summarize_clusters(
     top_clusters = sorted(cluster_cats.items(), key=lambda x: x[1], reverse=True)[:top_n_clusters]
     top_cluster_ids = set(cid for cid, count in top_clusters if count > 0)
 
-
-    # Use only English summarizer
+    # Instantiate English summarizer once
     summarizer = pipeline("summarization", model="facebook/bart-large-cnn", device=0)
 
     summaries = {}
@@ -148,27 +182,26 @@ def summarize_clusters(
         return summary_sentence
 
     for cid, posts in cluster_posts.items():
-        # Use the same text extraction logic as embed_cluster.py
+        # --- Keyword extraction ---
         all_text = " ".join([
             extract_text_for_summarization(post) for post in posts
         ])
         tokens = [t for t in tokenize(all_text) if t not in STOPWORDS and len(t) > 2]
         word_freq = Counter(tokens)
         top_keywords = [w for w, _ in word_freq.most_common(top_k_keywords)]
-        # Top titles by upvotes/score if available, else by order
+        # --- Top titles (by upvotes/score) ---
         def score(post):
             return post.get("score", 0) or post.get("upvotes", 0) or 0
         top_titles = sorted(posts, key=score, reverse=True)[:top_k_titles]
         top_titles_raw = [p.get("title", "") for p in top_titles if p.get("title")]
-        # Detect language for this cluster (use concat of all titles for robustness)
-        all_titles_text = " ".join([p.get("title", "") for p in posts if p.get("title")])
+        # --- Translate top_titles ---
+        all_titles_text = " ".join(top_titles_raw)
         try:
             lang_titles = detect(all_titles_text[:400]) if all_titles_text.strip() else "en"
         except Exception:
             lang_titles = "en"
-        # Translate top_titles
         top_titles_translated = [translate_text(t, lang_titles, field_name="title", cid=cid) for t in top_titles_raw]
-        # Translate top_keywords (join as sentence for batch translation, then split)
+        # --- Translate top_keywords ---
         keywords_text = " ".join(top_keywords)
         try:
             lang_keywords = detect(keywords_text[:400]) if keywords_text.strip() else "en"
@@ -177,15 +210,13 @@ def summarize_clusters(
         if lang_keywords != "en" and keywords_text.strip():
             translated_kw = translate_text(keywords_text, lang_keywords, field_name="keywords", cid=cid)
             top_keywords_translated = [k.strip() for k in translated_kw.split() if k.strip()]
-            # If translation fails or returns empty, fallback to cleaned original
             if not top_keywords_translated:
                 top_keywords_translated = [clean_unicode(k) for k in top_keywords]
         else:
             top_keywords_translated = [clean_unicode(k) for k in top_keywords]
-        # Generate summary only for selected clusters
+        # --- Summarization (with translation if needed) ---
         summary_sentence = ""
         if generate_summary and cid in top_cluster_ids:
-            # Concatenate top 5-10 post titles and summaries for input
             top_posts = sorted(posts, key=score, reverse=True)[:10]
             concat_text = " ".join([
                 extract_text_for_summarization(p) for p in top_posts
@@ -198,7 +229,6 @@ def summarize_clusters(
             if len(concat_text) <= 10:
                 summary_sentence = "[No summary – low content]"
             else:
-                # Detect language (sample first 400 chars)
                 try:
                     lang = detect(concat_text[:400])
                 except Exception:
@@ -216,7 +246,6 @@ def summarize_clusters(
                             concat_text = ""
                     else:
                         print(f"[WARN] No translator for summary in cluster {cid} (lang {lang})")
-                # Clean unicode again after translation
                 concat_text = clean_unicode(concat_text)
                 if not summary_sentence and concat_text:
                     try:
@@ -230,6 +259,7 @@ def summarize_clusters(
                         summary_sentence = f"[No summary]"
         if not summary_sentence:
             summary_sentence = "[No summary]"
+        # --- Save cluster summary ---
         summaries[cid] = {
             "cluster_id": cid,
             "total_posts": len(posts),
@@ -237,7 +267,7 @@ def summarize_clusters(
             "top_keywords": top_keywords_translated,
             "summary": safe_summary(summary_sentence)
         }
-    # Save output
+    # --- Write output ---
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(summaries, f, indent=2)

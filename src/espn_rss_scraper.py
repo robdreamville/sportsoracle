@@ -1,9 +1,15 @@
+# =========================
+# SportsOracle: ESPN RSS Scraper
+# =========================
+# This script scrapes the latest articles from ESPN RSS feeds for NBA and Soccer.
+# =========================
+
 import os
 import json
 from tqdm import tqdm
 import feedparser
 
-# 1. Define the ESPN RSS feeds you want to pull.
+# Define the ESPN RSS feeds to pull (NBA and Soccer)
 FEEDS = {
     "NBA":    "https://www.espn.com/espn/rss/nba/news",
     "Soccer": "https://www.espn.com/espn/rss/soccer/news",
@@ -11,12 +17,12 @@ FEEDS = {
 
 def scrape_espn_rss(data_dir="data"):
     """
-    Scrape the latest articles from ESPN RSS feeds defined above,
-    then write them to data/raw_espn.json and return the list.
+    Scrape the latest articles from ESPN RSS feeds defined in FEEDS.
+    Writes results to data/raw_espn.json and returns the list of articles.
     """
     articles = []
 
-    # 2. Loop through each sport feed
+    # Loop through each sport feed
     for category, url in FEEDS.items():
         # Parse the RSS feed
         feed = feedparser.parse(url)
@@ -40,6 +46,7 @@ def scrape_espn_rss(data_dir="data"):
                 "published": entry.get("published", "")
             })
 
+    # Save all articles to disk
     os.makedirs(data_dir, exist_ok=True)
     out_path = os.path.join(data_dir, "raw_espn.json")
     with open(out_path, "w") as f:

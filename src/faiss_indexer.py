@@ -1,3 +1,9 @@
+# =========================
+# SportsOracle: FAISS Indexing & Semantic Search
+# =========================
+# This script builds a FAISS vector index for fast semantic search over embedded sports data.
+# =========================
+
 import os
 import json
 import numpy as np
@@ -11,9 +17,12 @@ def build_faiss_index(
     mapping_path="data/index_mapping.json",
     model_name="all-MiniLM-L6-v2"
 ):
-    # Load embeddings
+    """
+    Build a FAISS index from precomputed embeddings and save index + id→metadata mapping.
+    """
+    # Load embeddings from disk
     embeddings = np.load(embeddings_path)
-    # Build FAISS index
+    # Build FAISS index (L2 distance)
     dim = embeddings.shape[1]
     index = faiss.IndexFlatL2(dim)
     index.add(embeddings.astype(np.float32))
@@ -29,6 +38,10 @@ def build_faiss_index(
     print(f"FAISS index and mapping saved to {index_path}, {mapping_path}")
 
 def search(query, top_k=5, model_name="all-MiniLM-L6-v2", index_path="data/faiss.index", mapping_path="data/index_mapping.json"):
+    """
+    Search the FAISS index for the top_k most similar items to the input query.
+    Returns a list of dicts with metadata and distance.
+    """
     # Load model and index
     model = SentenceTransformer(model_name)
     index = faiss.read_index(index_path)
@@ -43,5 +56,6 @@ def search(query, top_k=5, model_name="all-MiniLM-L6-v2", index_path="data/faiss
         results.append({"metadata": meta, "distance": float(dist)})
     return results
 
+# Allow this script to be run standalone for testing
 if __name__ == "__main__":
     build_faiss_index()

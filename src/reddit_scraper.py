@@ -1,4 +1,11 @@
-import os, json
+# =========================
+# SportsOracle: Reddit Scraper
+# =========================
+# This script scrapes posts from a list of sports-related subreddits using PRAW.
+# =========================
+
+import os
+import json
 from dotenv import load_dotenv
 from praw import Reddit
 from tqdm import tqdm
@@ -6,6 +13,10 @@ from tqdm import tqdm
 load_dotenv()
 
 def scrape_reddit_posts(subreddits, limit=200, data_dir="data"):
+    """
+    Scrape posts from the given list of subreddits using PRAW and save to disk.
+    Returns a list of post dicts.
+    """
     reddit = Reddit(
         client_id=os.getenv("REDDIT_CLIENT_ID"),
         client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
@@ -17,6 +28,7 @@ def scrape_reddit_posts(subreddits, limit=200, data_dir="data"):
         for post in tqdm(reddit.subreddit(sub).new(limit=limit),
                          desc=f"Scraping r/{sub}"):
             if not post.stickied:
+                # Compose a unified text field (title + selftext)
                 text = post.title + "\n\n" + (post.selftext or "")
                 posts.append({
                     "id": post.id,
@@ -32,6 +44,7 @@ def scrape_reddit_posts(subreddits, limit=200, data_dir="data"):
                     "created_utc": post.created_utc,
                 })
 
+    # Save all posts to disk
     os.makedirs(data_dir, exist_ok=True)
     out_path = os.path.join(data_dir, "raw_posts.json")
     with open(out_path, "w") as f:
