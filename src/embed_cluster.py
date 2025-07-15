@@ -26,12 +26,55 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined.json")):
     with open(path, "r", encoding="utf-8") as f:
         items = json.load(f)
 
+    # Subreddit to canonical category mapping and helpers
+    SUBREDDIT_TO_CATEGORY = {
+        "soccer": "soccer",
+        "football": "soccer",
+        "premierleague": "soccer",
+        "championsleague": "soccer",
+        "laliga": "soccer",
+        "seriea": "soccer",
+        "bundesliga": "soccer",
+        "ligue1": "soccer",
+        "nba": "nba",
+        "nbaoffseason": "nba",
+        "nba_draft": "nba",
+        "nbacirclejerk": "nba",
+    }
+    NBA_KEYWORDS = ["nba", "basketball"]
+    SOCCER_KEYWORDS = ["soccer", "football", "premier league", "champions league", "laliga", "serie a", "bundesliga", "ligue 1", "futbol"]
+
+    def infer_category(subreddit, title, text):
+        sub = (subreddit or "").lower()
+        if sub in SUBREDDIT_TO_CATEGORY:
+            return SUBREDDIT_TO_CATEGORY[sub]
+        # Keyword fallback in subreddit
+        for kw in NBA_KEYWORDS:
+            if kw in sub:
+                return "nba"
+        for kw in SOCCER_KEYWORDS:
+            if kw in sub:
+                return "soccer"
+        # Keyword fallback in title/text
+        title_l = (title or "").lower()
+        text_l = (text or "").lower()
+        for kw in NBA_KEYWORDS:
+            if kw in title_l or kw in text_l:
+                return "nba"
+        for kw in SOCCER_KEYWORDS:
+            if kw in title_l or kw in text_l:
+                return "soccer"
+        return "other"
+
     for item in items:
         if item["source"] == "reddit":
             # Reddit: Use title + selftext
             base_text = item.get("title", "") or ""
             selftext = item.get("selftext", "") or ""
             item["text_for_embedding"] = f"{base_text}\n\n{selftext}".strip()
+            subreddit = item.get("subreddit", "")
+            # Use mapping + keyword fallback
+            item["category"] = infer_category(subreddit, item.get("title", ""), item.get("text", ""))
         elif item["source"] == "espn":
             # ESPN: Use title + summary + text + category
             title = item.get("title", "") or ""
@@ -39,9 +82,11 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined.json")):
             text = item.get("text", "") or ""
             category = item.get("category", "") or ""
             item["text_for_embedding"] = f"{title}\n\n{summary}\n\n{text}\n\nCategory: {category}".strip()
+            item["category"] = category.lower() if category else "espn"
         else:
             # Fallback: Use any available text field
             item["text_for_embedding"] = item.get("text", "")
+            item["category"] = "unknown"
 
     texts = [item["text_for_embedding"] for item in items]
     return items, texts
