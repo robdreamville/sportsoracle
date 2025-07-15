@@ -1,24 +1,15 @@
-# For summarization
-transformers
-torch
-
-# For keyword extraction
-keybert
-
-# For language detection
-langdetect
-praw
-python-dotenv
-tqdm
-feedparser
-sentence-transformers
-scikit-learn
-
 # Core
 numpy
-faiss-cpu  # or faiss-gpu if running with GPU
-
-# For summarization
-transformers
+scikit-learn
 torch
+transformers
+sentence-transformers
+keybert
+langdetect
+feedparser
+tqdm
+python-dotenv
+praw
+faiss-cpu  # or faiss-gpu if running with GPU
+datasets  # Hugging Face Datasets for universal data loading
 

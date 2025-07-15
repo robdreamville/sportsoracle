@@ -200,18 +200,22 @@ def summarize_clusters(
     if out_path is None:
         out_path = os.path.join(OUTPUTS_DIR, "trends_summary.json")
 
-    # Load clusters and metadata
-    with open(clusters_path, "r", encoding="utf-8") as f:
-        clusters = json.load(f)
-    metadata = []
-    with open(metadata_path, "r", encoding="utf-8") as f:
-        for line in f:
-            metadata.append(json.loads(line))
-    id2meta = {item["id"]: item for item in metadata}
+    # Use Hugging Face Datasets for robust, universal loading
+    from datasets import load_dataset, Dataset, concatenate_datasets
+    # Load clusters
+    clusters_ds = load_dataset('json', data_files=clusters_path, split='train')
+    # Load metadata
+    if metadata_path.endswith('.jsonl'):
+        metadata_ds = load_dataset('json', data_files=metadata_path, split='train', field=None)
+    else:
+        metadata_ds = load_dataset('json', data_files=metadata_path, split='train')
+    # Build id -> metadata mapping
+    id2meta = {item['id']: item for item in metadata_ds}
+    # Group posts by cluster
     cluster_posts = defaultdict(list)
-    for entry in clusters:
-        cid = entry["cluster"]
-        pid = entry["id"]
+    for entry in clusters_ds:
+        cid = entry['cluster']
+        pid = entry['id']
         meta = id2meta.get(pid)
         if meta:
             cluster_posts[cid].append(meta)
@@ -286,6 +290,13 @@ def summarize_clusters(
             return post.get("score", 0) or post.get("upvotes", 0) or 0
         top_titles = sorted(posts, key=score, reverse=True)[:top_k_titles]
         top_titles_raw = [p.get("title", "") for p in top_titles if p.get("title")]
+        # --- Translate top_titles ---
+        all_titles_text = " ".join(top_titles_raw)
+        try:
+            lang_titles = detect(all_titles_text[:400]) if all_titles_text.strip() else "en"
+        except Exception:
+            lang_titles = "en"
+        top_titles_translated = [translate_text(t, lang_titles, field_name="title", cid=cid) for t in top_titles_raw]
         # --- Enhanced language detection: per-post, then dominant ---
         post_langs = []
         for post in posts:
