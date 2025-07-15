@@ -1,11 +1,12 @@
-
 import os
 import json
 import re
 import unicodedata
 from collections import Counter, defaultdict
 from typing import List, Dict
+
 from transformers import pipeline
+from langdetect import detect
 
 STOPWORDS = set([
     'the', 'and', 'to', 'of', 'in', 'a', 'is', 'for', 'on', 'with', 'at', 'by', 'an', 'be', 'as', 'from', 'that',
@@ -37,18 +38,37 @@ def extract_text_for_summarization(item):
     Compose a text string for summarization, handling Reddit and ESPN formats, and clean unicode.
     """
     if item.get("source") == "reddit":
-        base_text = item.get("title", "") or ""
-        selftext = item.get("selftext", "") or ""
+        base_text = clean_unicode(item.get("title", "") or "")
+        selftext = clean_unicode(item.get("selftext", "") or "")
         text = f"{base_text}\n\n{selftext}".strip()
     elif item.get("source") == "espn":
-        title = item.get("title", "") or ""
-        summary = item.get("summary", "") or ""
-        text_field = item.get("text", "") or ""
-        category = item.get("category", "") or ""
+        title = clean_unicode(item.get("title", "") or "")
+        summary = clean_unicode(item.get("summary", "") or "")
+        text_field = clean_unicode(item.get("text", "") or "")
+        category = clean_unicode(item.get("category", "") or "")
         text = f"{title}\n\n{summary}\n\n{text_field}\n\nCategory: {category}".strip()
     else:
-        text = item.get("text", "") or ""
-    return clean_unicode(text)
+        text = clean_unicode(item.get("text", "") or "")
+    return text
+
+def get_translator(lang_code):
+    """
+    Return a translation pipeline for the given language code to English.
+    """
+    lang2translator = {
+        "es": "Helsinki-NLP/opus-mt-es-en",
+        "it": "Helsinki-NLP/opus-mt-it-en",
+        "de": "Helsinki-NLP/opus-mt-de-en",
+        "fr": "Helsinki-NLP/opus-mt-fr-en"
+    }
+    if not hasattr(get_translator, "cache"):
+        get_translator.cache = {}
+    if lang_code not in lang2translator:
+        return None
+    model_name = lang2translator[lang_code]
+    if model_name not in get_translator.cache:
+        get_translator.cache[model_name] = pipeline("translation", model=model_name, device=0)
+    return get_translator.cache[model_name]
 
 def summarize_clusters(
     clusters_path="data/clusters.json",
@@ -58,7 +78,7 @@ def summarize_clusters(
     top_k_keywords=10,
     generate_summary=False,
     top_n_clusters=15,
-    summary_model="facebook/bart-large-cnn"
+    summary_models=None
 ):
     """
     Summarize clusters with keyword extraction, top titles, and optional abstractive summary using Hugging Face transformers.
@@ -98,10 +118,9 @@ def summarize_clusters(
     top_clusters = sorted(cluster_cats.items(), key=lambda x: x[1], reverse=True)[:top_n_clusters]
     top_cluster_ids = set(cid for cid, count in top_clusters if count > 0)
 
-    # Prepare summarizer if needed
-    summarizer = None
-    if generate_summary:
-        summarizer = pipeline("summarization", model=summary_model, device=0)
+
+    # Use only English summarizer
+    summarizer = pipeline("summarization", model="facebook/bart-large-cnn", device=0)
 
     summaries = {}
     def safe_summary(summary_sentence):
@@ -132,18 +151,37 @@ def summarize_clusters(
             ])
             concat_text = clean_unicode(concat_text)
             concat_text = concat_text.strip()
-            # Truncate input for summarizer (BART max input ~1024 tokens, but keep shorter for safety)
             max_chars = 2000
             if len(concat_text) > max_chars:
                 concat_text = concat_text[:max_chars]
-            if not concat_text:
-                summary_sentence = "[No meaningful content to summarize]"
+            if len(concat_text) <= 10:
+                summary_sentence = "[No summary – low content]"
             else:
+                # Detect language (sample first 400 chars)
                 try:
-                    summary_out = summarizer(concat_text, max_length=60, min_length=15, do_sample=False)
-                    summary_sentence = summary_out[0]["summary_text"].strip()
-                except Exception as e:
-                    summary_sentence = f"[Summarization error: {e}]"
+                    lang = detect(concat_text[:400])
+                except Exception:
+                    lang = "en"
+                # Translate to English if needed
+                if lang != "en":
+                    translator = get_translator(lang)
+                    if translator:
+                        try:
+                            translation = translator(concat_text, max_length=2000)[0]["translation_text"]
+                            concat_text = clean_unicode(translation)
+                        except Exception:
+                            summary_sentence = "[No summary – translation failed]"
+                            concat_text = ""
+                if not summary_sentence and concat_text:
+                    try:
+                        summary_out = summarizer(concat_text, max_length=60, min_length=15, do_sample=False)
+                        summary_sentence = summary_out[0]["summary_text"].strip()
+                        if not summary_sentence:
+                            summary_sentence = "[No summary]"
+                    except Exception as e:
+                        summary_sentence = f"[No summary]"
+        if not summary_sentence:
+            summary_sentence = "[No summary]"
         summaries[cid] = {
             "cluster_id": cid,
             "total_posts": len(posts),

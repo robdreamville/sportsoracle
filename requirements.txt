@@ -1,3 +1,9 @@
+# For summarization
+transformers
+torch
+
+# For language detection
+langdetect
 praw
 python-dotenv
 tqdm
