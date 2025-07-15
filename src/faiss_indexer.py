@@ -1,0 +1,47 @@
+import os
+import json
+import numpy as np
+import faiss
+from sentence_transformers import SentenceTransformer
+
+def build_faiss_index(
+    embeddings_path="data/embeddings.npy",
+    metadata_path="data/metadata.jsonl",
+    index_path="data/faiss.index",
+    mapping_path="data/index_mapping.json",
+    model_name="all-MiniLM-L6-v2"
+):
+    # Load embeddings
+    embeddings = np.load(embeddings_path)
+    # Build FAISS index
+    dim = embeddings.shape[1]
+    index = faiss.IndexFlatL2(dim)
+    index.add(embeddings.astype(np.float32))
+    faiss.write_index(index, index_path)
+    # Build id -> metadata mapping
+    mapping = {}
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            meta = json.loads(line)
+            mapping[i] = meta  # index position to metadata
+    with open(mapping_path, "w", encoding="utf-8") as f:
+        json.dump(mapping, f, indent=2)
+    print(f"FAISS index and mapping saved to {index_path}, {mapping_path}")
+
+def search(query, top_k=5, model_name="all-MiniLM-L6-v2", index_path="data/faiss.index", mapping_path="data/index_mapping.json"):
+    # Load model and index
+    model = SentenceTransformer(model_name)
+    index = faiss.read_index(index_path)
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        mapping = json.load(f)
+    # Embed query
+    query_emb = model.encode([query])
+    D, I = index.search(query_emb.astype(np.float32), top_k)
+    results = []
+    for idx, dist in zip(I[0], D[0]):
+        meta = mapping.get(str(idx)) or mapping.get(idx)
+        results.append({"metadata": meta, "distance": float(dist)})
+    return results
+
+if __name__ == "__main__":
+    build_faiss_index()
