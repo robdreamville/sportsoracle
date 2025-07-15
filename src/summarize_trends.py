@@ -209,19 +209,23 @@ def summarize_clusters(
         metadata_ds = load_dataset('json', data_files=metadata_path, split='train', field=None)
     else:
         metadata_ds = load_dataset('json', data_files=metadata_path, split='train')
-    # Build id -> metadata mapping
-    id2meta = {item['id']: item for item in metadata_ds}
-    # Group posts by cluster
+    # Build id -> metadata mapping (normalize IDs to string)
+    id2meta = {str(item['id']): item for item in metadata_ds}
+    # Group posts by cluster, log missing metadata
     cluster_posts = defaultdict(list)
     for entry in clusters_ds:
         cid = entry['cluster']
         pid = entry['id']
-        meta = id2meta.get(pid)
+        meta = id2meta.get(str(pid))
+        if not meta:
+            print(f"[WARN] No metadata found for post id {pid} in cluster {cid}")
         if meta:
             cluster_posts[cid].append(meta)
 
     # Helper: is NBA or soccer
     def is_nba_or_soccer(post):
+        if not post or not isinstance(post, dict):
+            return False
         cat = post.get("category", "").lower()
         return "nba" in cat or "soccer" in cat
 
