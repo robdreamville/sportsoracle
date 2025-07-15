@@ -13,6 +13,43 @@ from tqdm import tqdm
 load_dotenv()
 
 def scrape_reddit_posts(subreddits, limit=200, data_dir=None):
+    # Subreddit to canonical category mapping and helpers (copied from embed_cluster.py)
+    SUBREDDIT_TO_CATEGORY = {
+        "soccer": "soccer",
+        "football": "soccer",
+        "premierleague": "soccer",
+        "championsleague": "soccer",
+        "laliga": "soccer",
+        "seriea": "soccer",
+        "bundesliga": "soccer",
+        "ligue1": "soccer",
+        "nba": "nba",
+        "nbaoffseason": "nba",
+        "nba_draft": "nba",
+        "nbacirclejerk": "nba",
+    }
+    NBA_KEYWORDS = ["nba", "basketball"]
+    SOCCER_KEYWORDS = ["soccer", "football", "premier league", "champions league", "laliga", "serie a", "bundesliga", "ligue 1", "futbol"]
+
+    def infer_category(subreddit, title, text):
+        sub = (subreddit or "").lower()
+        if sub in SUBREDDIT_TO_CATEGORY:
+            return SUBREDDIT_TO_CATEGORY[sub]
+        for kw in NBA_KEYWORDS:
+            if kw in sub:
+                return "nba"
+        for kw in SOCCER_KEYWORDS:
+            if kw in sub:
+                return "soccer"
+        title_l = (title or "").lower()
+        text_l = (text or "").lower()
+        for kw in NBA_KEYWORDS:
+            if kw in title_l or kw in text_l:
+                return "nba"
+        for kw in SOCCER_KEYWORDS:
+            if kw in title_l or kw in text_l:
+                return "soccer"
+        return "other"
     """
     Scrape posts from the given list of subreddits using PRAW and save to disk.
     Returns a list of post dicts.
@@ -29,11 +66,11 @@ def scrape_reddit_posts(subreddits, limit=200, data_dir=None):
 
     posts = []
     for sub in subreddits:
-        for post in tqdm(reddit.subreddit(sub).new(limit=limit),
-                         desc=f"Scraping r/{sub}"):
+        for post in tqdm(reddit.subreddit(sub).new(limit=limit), desc=f"Scraping r/{sub}"):
             if not post.stickied:
                 # Compose a unified text field (title + selftext)
                 text = post.title + "\n\n" + (post.selftext or "")
+                category = infer_category(sub, post.title, text)
                 posts.append({
                     "id": post.id,
                     "source": "reddit",
@@ -46,6 +83,7 @@ def scrape_reddit_posts(subreddits, limit=200, data_dir=None):
                     "num_comments": post.num_comments,
                     "url": post.url,
                     "created_utc": post.created_utc,
+                    "category": category,
                 })
 
     # Save all posts to disk (legacy JSON)
