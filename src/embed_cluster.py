@@ -31,33 +31,42 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined.jsonl")):
     # Load as Hugging Face Dataset for efficient processing
     ds = load_dataset("json", data_files=path, split="train")
 
-    # Deduplicate by ID, filter out missing/null IDs
-    seen_ids = set()
-    metadata = []
-    texts = []
-    for item in ds:
-        item_id = str(item.get("id", "")).strip()
-        if not item_id or item_id.lower() == "none":
-            continue
-        if item_id in seen_ids:
-            continue
-        seen_ids.add(item_id)
-        # Build text for embedding (Reddit: title+selftext, ESPN: title+summary+text)
-        if item["source"] == "reddit":
-            base_text = item.get("title", "") or ""
-            selftext = item.get("selftext", "") or ""
+    # Filter out items with missing/null/empty IDs
+    ds = ds.filter(lambda x: x.get("id") and str(x["id"]).strip().lower() != "none")
+
+    # Deduplicate by ID (keep first occurrence)
+    def dedup_by_id(batch):
+        seen = set()
+        keep = []
+        for i, id_ in enumerate(batch["id"]):
+            if id_ not in seen:
+                seen.add(id_)
+                keep.append(True)
+            else:
+                keep.append(False)
+        return {k: [v for v, keep_flag in zip(vals, keep) if keep_flag] for k, vals in batch.items()}
+    ds = ds.map(lambda x: x, batched=True).map(dedup_by_id, batched=True)
+
+    # Add text_for_embedding field
+    def build_text_for_embedding(example):
+        if example["source"] == "reddit":
+            base_text = example.get("title", "") or ""
+            selftext = example.get("selftext", "") or ""
             text_for_embedding = f"{base_text}\n\n{selftext}".strip()
-        elif item["source"] == "espn":
-            title = item.get("title", "") or ""
-            summary = item.get("summary", "") or ""
-            text = item.get("text", "") or ""
+        elif example["source"] == "espn":
+            title = example.get("title", "") or ""
+            summary = example.get("summary", "") or ""
+            text = example.get("text", "") or ""
             text_for_embedding = f"{title}\n\n{summary}\n\n{text}".strip()
         else:
-            text_for_embedding = item.get("text", "")
-        item_out = dict(item)
-        item_out["text_for_embedding"] = text_for_embedding
-        metadata.append(item_out)
-        texts.append(text_for_embedding)
+            text_for_embedding = example.get("text", "")
+        example["text_for_embedding"] = text_for_embedding
+        return example
+    ds = ds.map(build_text_for_embedding)
+
+    # Convert to list of dicts and texts
+    metadata = ds.to_list()
+    texts = [item["text_for_embedding"] for item in metadata]
     return metadata, texts
 
 def embed_texts(texts, model_name="all-MiniLM-L6-v2"):
