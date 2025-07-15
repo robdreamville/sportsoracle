@@ -14,6 +14,7 @@ from typing import List, Dict
 
 from transformers import pipeline
 from langdetect import detect
+from keybert import KeyBERT
 
 # -------------------------
 # Stopwords for keyword filtering
@@ -162,10 +163,7 @@ def summarize_clusters(
     summary_models=None
 ):
     """
-    Summarize clusters with keyword extraction, top titles, and optional abstractive summary using Hugging Face transformers.
-    All output is translated to English and ASCII-cleaned.
-    Only summarizes top N clusters for NBA and soccer categories.
-    Handles Reddit and ESPN data formats for text extraction.
+    Summarize clusters with KeyBERT keyword extraction, top titles, and multilingual summarization.
     """
     # Load clusters and metadata
     with open(clusters_path, "r", encoding="utf-8") as f:
@@ -205,14 +203,28 @@ def summarize_clusters(
             return "[EMPTY]"
         return summary_sentence
 
+    # Initialize KeyBERT with the same embedding model as used for clustering
+    kw_model = KeyBERT(model="all-MiniLM-L6-v2")
+
     for cid, posts in cluster_posts.items():
         # --- Keyword extraction ---
         all_text = " ".join([
             extract_text_for_summarization(post) for post in posts
         ])
-        tokens = [t for t in tokenize(all_text) if t not in STOPWORDS and len(t) > 2]
-        word_freq = Counter(tokens)
-        top_keywords = [w for w, _ in word_freq.most_common(top_k_keywords)]
+        # Use KeyBERT for keyword extraction
+        try:
+            keybert_keywords = kw_model.extract_keywords(
+                all_text,
+                keyphrase_ngram_range=(1, 2),
+                stop_words=STOPWORDS,
+                top_n=top_k_keywords
+            )
+            top_keywords = [kw for kw, score in keybert_keywords]
+        except Exception as e:
+            print(f"[WARN] KeyBERT failed for cluster {cid}: {e}. Falling back to frequency-based keywords.")
+            tokens = [t for t in tokenize(all_text) if t not in STOPWORDS and len(t) > 2]
+            word_freq = Counter(tokens)
+            top_keywords = [w for w, _ in word_freq.most_common(top_k_keywords)]
         # --- Top titles (by upvotes/score) ---
         def score(post):
             return post.get("score", 0) or post.get("upvotes", 0) or 0

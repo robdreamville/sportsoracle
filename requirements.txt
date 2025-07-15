@@ -2,6 +2,9 @@
 transformers
 torch
 
+# For keyword extraction
+keybert
+
 # For language detection
 langdetect
 praw
