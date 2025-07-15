@@ -226,16 +226,16 @@ def summarize_clusters(
                     top_n=top_k_keywords
                 )
                 top_keywords = [kw for kw, score in keybert_keywords if kw]
-                # Fallback if KeyBERT returns empty
                 if not top_keywords:
+                    print(f"[DEBUG] KeyBERT returned empty keyword list for cluster {cid}. Text length: {len(all_text)}. Text: {all_text[:200]}...")
                     raise ValueError("KeyBERT returned empty keyword list")
             except Exception as e:
-                print(f"[WARN] KeyBERT failed for cluster {cid}: {e}. Falling back to frequency-based keywords.")
+                print(f"[WARN] KeyBERT failed for cluster {cid}: {e}. Falling back to frequency-based keywords. Text length: {len(all_text)}. Text: {all_text[:200]}...")
                 tokens = [t for t in tokenize(all_text) if t not in STOPWORDS and len(t) > 2]
                 word_freq = Counter(tokens)
                 top_keywords = [w for w, _ in word_freq.most_common(top_k_keywords)]
         else:
-            # Not enough content for KeyBERT, use frequency-based
+            print(f"[DEBUG] Not enough content for KeyBERT in cluster {cid}. Text length: {len(all_text)}. Text: {all_text[:200]}...")
             tokens = [t for t in tokenize(all_text) if t not in STOPWORDS and len(t) > 2]
             word_freq = Counter(tokens)
             top_keywords = [w for w, _ in word_freq.most_common(top_k_keywords)]
@@ -277,35 +277,34 @@ def summarize_clusters(
             if len(concat_text) > max_chars:
                 concat_text = concat_text[:max_chars]
             if len(concat_text) <= 10:
+                print(f"[DEBUG] Skipping summary for cluster {cid}: not enough content (len={len(concat_text)})")
                 summary_sentence = "[No summary – low content]"
             else:
                 try:
                     lang = detect(concat_text[:400])
                 except Exception:
                     lang = "en"
-                # Use BART for English, mBART for other languages
                 summarizer = get_summarizer(lang)
                 try:
                     if lang == "en":
                         summary_out = summarizer(concat_text, max_length=60, min_length=15, do_sample=False)
                     else:
-                        # mBART: set src_lang and tgt_lang for English output
                         summary_out = summarizer(
                             concat_text,
                             max_length=60,
                             min_length=15,
-                            do_sample=False,
-                            src_lang=lang,
-                            tgt_lang="en_XX"
+                            do_sample=False
                         )
                     summary_sentence = summary_out[0]["summary_text"].strip()
                     summary_sentence = clean_unicode(summary_sentence)
                     if not summary_sentence:
+                        print(f"[DEBUG] Empty summary for cluster {cid}. Input: {concat_text[:200]}...")
                         summary_sentence = "[No summary]"
                 except Exception as e:
-                    print(f"[ERROR] Summarization failed for cluster {cid} (lang {lang}): {e}")
+                    print(f"[ERROR] Summarization failed for cluster {cid} (lang {lang}): {e}. Input: {concat_text[:200]}...")
                     summary_sentence = f"[No summary]"
         if not summary_sentence:
+            print(f"[DEBUG] Final summary empty for cluster {cid}.")
             summary_sentence = "[No summary]"
         # --- Save cluster summary ---
         summaries[cid] = {
