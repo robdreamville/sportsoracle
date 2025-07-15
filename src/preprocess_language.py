@@ -16,7 +16,17 @@ lang2translator = {
     "es": "Helsinki-NLP/opus-mt-es-en",
     "it": "Helsinki-NLP/opus-mt-it-en",
     "de": "Helsinki-NLP/opus-mt-de-en",
-    "fr": "Helsinki-NLP/opus-mt-fr-en"
+    "fr": "Helsinki-NLP/opus-mt-fr-en",
+    "af": "Helsinki-NLP/opus-mt-af-en",  # Afrikaans
+    "ca": "Helsinki-NLP/opus-mt-ca-en",  # Catalan
+    "da": "Helsinki-NLP/opus-mt-da-en",  # Danish
+    "id": "Helsinki-NLP/opus-mt-id-en",  # Indonesian
+    "et": "Helsinki-NLP/opus-mt-et-en",  # Estonian
+    "no": "Helsinki-NLP/opus-mt-no-en",  # Norwegian
+    "fi": "Helsinki-NLP/opus-mt-fi-en",  # Finnish
+    "sl": "Helsinki-NLP/opus-mt-sl-en",  # Slovenian
+    "hr": "Helsinki-NLP/opus-mt-hr-en",  # Croatian
+    "tl": "Helsinki-NLP/opus-mt-tl-en",  # Tagalog
 }
 _translator_cache = {}
 
@@ -31,23 +41,36 @@ def translate_to_en_batch(texts, lang):
         return texts
     model_name = lang2translator[lang]
     if model_name not in _translator_cache:
-        _translator_cache[model_name] = pipeline(
-            "translation",
-            model=model_name,
-            device=0 if torch.cuda.is_available() else -1
-        )
+        try:
+            _translator_cache[model_name] = pipeline(
+                "translation",
+                model=model_name,
+                device=0 if torch.cuda.is_available() else -1
+            )
+        except Exception as e:
+            print(f"[WARN] Could not load translation model for {lang}: {e}")
+            return texts
     # Filter out empty strings to avoid CUDA errors
     nonempty_indices = [i for i, t in enumerate(texts) if t and t.strip()]
-    nonempty_texts = [texts[i] for i in nonempty_indices]
     translated = list(texts)  # Copy original, will replace non-empty
-    if nonempty_texts:
+    # Helper: chunk a string into <=512 char pieces
+    def chunk_text(text, chunk_size=512):
+        return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+    # For each non-empty text, chunk if needed, translate, and reassemble
+    for idx in nonempty_indices:
+        text = texts[idx]
+        if len(text) <= 512:
+            to_translate = [text]
+        else:
+            to_translate = chunk_text(text, 512)
         try:
-            results = _translator_cache[model_name](nonempty_texts, max_length=2000, batch_size=16)
-            for idx, r in zip(nonempty_indices, results):
-                translated[idx] = r["translation_text"]
-        except Exception:
+            results = _translator_cache[model_name](to_translate, max_length=512, batch_size=16)
+            translated_chunks = [r["translation_text"] for r in results]
+            translated[idx] = " ".join(translated_chunks)
+        except Exception as e:
+            print(f"[WARN] Translation failed for {lang}: {e}")
             # If translation fails, fall back to original
-            pass
+            translated[idx] = text
     return translated
 
 
