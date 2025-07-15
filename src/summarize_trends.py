@@ -318,7 +318,6 @@ def summarize_clusters(
                         tokenizer = MBart50TokenizerFast.from_pretrained(model_name)
                         inputs = tokenizer(concat_text, return_tensors="pt", truncation=True, max_length=512)
                         summarizer.model.config.forced_bos_token_id = tokenizer.lang_code_to_id["en_XX"]
-                        import torch
                         with torch.no_grad():
                             summary_ids = summarizer.model.generate(
                                 inputs["input_ids"],
