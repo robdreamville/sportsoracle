@@ -26,6 +26,19 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined.json")):
     with open(path, "r", encoding="utf-8") as f:
         items = json.load(f)
 
+    # Deduplicate by ID, filter out missing/null IDs
+    seen_ids = set()
+    deduped_items = []
+    for item in items:
+        item_id = str(item.get("id", "")).strip()
+        if not item_id or item_id.lower() == "none":
+            continue  # skip items with missing/null ID
+        if item_id in seen_ids:
+            continue  # skip duplicates, keep first occurrence
+        seen_ids.add(item_id)
+        deduped_items.append(item)
+    items = deduped_items
+
     # Subreddit to canonical category mapping and helpers
     SUBREDDIT_TO_CATEGORY = {
         "soccer": "soccer",
@@ -48,14 +61,12 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined.json")):
         sub = (subreddit or "").lower()
         if sub in SUBREDDIT_TO_CATEGORY:
             return SUBREDDIT_TO_CATEGORY[sub]
-        # Keyword fallback in subreddit
         for kw in NBA_KEYWORDS:
             if kw in sub:
                 return "nba"
         for kw in SOCCER_KEYWORDS:
             if kw in sub:
                 return "soccer"
-        # Keyword fallback in title/text
         title_l = (title or "").lower()
         text_l = (text or "").lower()
         for kw in NBA_KEYWORDS:
@@ -68,15 +79,12 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined.json")):
 
     for item in items:
         if item["source"] == "reddit":
-            # Reddit: Use title + selftext
             base_text = item.get("title", "") or ""
             selftext = item.get("selftext", "") or ""
             item["text_for_embedding"] = f"{base_text}\n\n{selftext}".strip()
             subreddit = item.get("subreddit", "")
-            # Use mapping + keyword fallback
             item["category"] = infer_category(subreddit, item.get("title", ""), item.get("text", ""))
         elif item["source"] == "espn":
-            # ESPN: Use title + summary + text + category
             title = item.get("title", "") or ""
             summary = item.get("summary", "") or ""
             text = item.get("text", "") or ""
@@ -84,7 +92,6 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined.json")):
             item["text_for_embedding"] = f"{title}\n\n{summary}\n\n{text}\n\nCategory: {category}".strip()
             item["category"] = category.lower() if category else "espn"
         else:
-            # Fallback: Use any available text field
             item["text_for_embedding"] = item.get("text", "")
             item["category"] = "unknown"
 
@@ -99,7 +106,7 @@ def embed_texts(texts, model_name="all-MiniLM-L6-v2"):
     model = SentenceTransformer(model_name)
     device = "cuda" if model.device.type == "cuda" else "cpu"
     print(f"Using device: {device}")
-    embeddings = model.encode(texts, show_progress_bar=True, device=device)
+    embeddings = model.encode(texts, show_progress_bar=False, device=device)
     return embeddings
 
 def cluster_embeddings(embeddings, method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
@@ -113,14 +120,10 @@ def cluster_embeddings(embeddings, method="kmeans", n_clusters=20, dbscan_eps=0.
     if method == "kmeans":
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
         labels = kmeans.fit_predict(embeddings)
-        print(f"[INFO] KMeans produced {len(set(labels))} clusters.")
         return labels
     elif method == "dbscan":
         dbscan = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples, n_jobs=-1)
         labels = dbscan.fit_predict(embeddings)
-        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-        n_noise = list(labels).count(-1)
-        print(f"[INFO] DBSCAN produced {n_clusters} clusters, {n_noise} noise points.")
         return labels
     else:
         raise ValueError(f"Unknown clustering method: {method}")
@@ -129,14 +132,28 @@ def save_results(embeddings, metadata, labels):
     """
     Save embeddings, metadata, and cluster assignments to disk for downstream use.
     """
+
     os.makedirs(DATA_DIR, exist_ok=True)
+    # Check alignment
+    if not (len(embeddings) == len(metadata) == len(labels)):
+        raise ValueError(f"Mismatch: embeddings({len(embeddings)}), metadata({len(metadata)}), labels({len(labels)})")
     np.save(os.path.join(DATA_DIR, "embeddings.npy"), embeddings)
+    # Save metadata.jsonl and build clusters dict
+    clusters = {}
     with open(os.path.join(DATA_DIR, "metadata.jsonl"), "w", encoding="utf-8") as f:
         for item, label in zip(metadata, labels):
             item_out = dict(item)
             item_out["cluster"] = int(label)
             f.write(json.dumps(item_out, ensure_ascii=False) + "\n")
+            cid = int(label)
+            pid = str(item_out.get("id", "")).strip()
+            if cid not in clusters:
+                clusters[cid] = []
+            clusters[cid].append(pid)
     np.save(os.path.join(DATA_DIR, "labels.npy"), labels)
+    # Save clusters.json for downstream summarization
+    with open(os.path.join(DATA_DIR, "clusters.json"), "w", encoding="utf-8") as f:
+        json.dump(clusters, f, ensure_ascii=False, indent=2)
 
 
 # Run the embedding and clustering pipeline

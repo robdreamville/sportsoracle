@@ -26,6 +26,7 @@ def get_project_root():
     # Use environment variable if set, else default to cwd
     return os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
 
+import logging
 PROJECT_ROOT = get_project_root()
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 OUTPUTS_DIR = os.path.join(PROJECT_ROOT, "outputs")
@@ -44,6 +45,11 @@ STOPWORDS = set([
     'player', 'players', 'coach', 'coaches', 'match', 'matches', 'win', 'won', 'loss', 'losses', 'play', 'playing',
     'score', 'scored', 'scoring', 'points', 'point', 'home', 'away', 'vs', 'vs.', 'espn', 'reddit', 'category', 'him', 'some'
 ])
+
+def frequency_keywords(text, top_n=10):
+    tokens = [t for t in tokenize(text) if t not in STOPWORDS]
+    freq = Counter(tokens)
+    return [kw for kw, _ in freq.most_common(top_n)]
 
 # -------------------------
 # Tokenization utility
@@ -75,6 +81,38 @@ def clean_unicode(text: str) -> str:
     text = text.replace("\u2013", "-").replace("\u2014", "-")
     # Normalize and encode to ASCII
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+def extract_keywords_chunked(text, kw_model, chunk_size=512, top_n=10):
+    """
+    Extract keywords from long text by chunking and aggregating results.
+    Fallback to frequency-based extraction if KeyBERT fails or returns empty.
+    """
+    if not text or not isinstance(text, str):
+        return []
+    tokens = tokenize(text)
+    if len(tokens) <= chunk_size:
+        try:
+            keywords = kw_model.extract_keywords(text, top_n=top_n, stop_words=STOPWORDS)
+            return [kw for kw, _ in keywords]
+        except Exception as e:
+            print(f"KeyBERT failed on short text: {e}")
+            return frequency_keywords(text, top_n)
+    # Chunking
+    chunks = []
+    for i in range(0, len(tokens), chunk_size):
+        chunk = " ".join(tokens[i:i+chunk_size])
+        chunks.append(chunk)
+    all_keywords = []
+    for chunk in chunks:
+        try:
+            kws = kw_model.extract_keywords(chunk, top_n=top_n, stop_words=STOPWORDS)
+            all_keywords.extend([kw for kw, _ in kws])
+        except Exception as e:
+            print(f"KeyBERT failed on chunk: {e}")
+            all_keywords.extend(frequency_keywords(chunk, top_n))
+    # Aggregate and deduplicate
+    freq = Counter(all_keywords)
+    return [kw for kw, _ in freq.most_common(top_n)]
 
 # -------------------------
 # Compose text for summarization (Reddit/ESPN aware)
