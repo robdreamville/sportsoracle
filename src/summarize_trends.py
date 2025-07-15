@@ -204,11 +204,13 @@ def summarize_clusters(
     from datasets import load_dataset, Dataset, concatenate_datasets
     # Load clusters
     clusters_ds = load_dataset('json', data_files=clusters_path, split='train')
-    # Load metadata
+    # Load metadata (fix: do NOT use field=None for .jsonl, just use default)
     if metadata_path.endswith('.jsonl'):
-        metadata_ds = load_dataset('json', data_files=metadata_path, split='train', field=None)
+        metadata_ds = load_dataset('json', data_files=metadata_path, split='train')
     else:
         metadata_ds = load_dataset('json', data_files=metadata_path, split='train')
+    # Debug: print first few metadata items to verify structure
+    print("[DEBUG] First 3 metadata items:", [metadata_ds[i] for i in range(min(3, len(metadata_ds)))])
     # Build id -> metadata mapping (normalize IDs to string)
     id2meta = {str(item['id']): item for item in metadata_ds}
     # Group posts by cluster, log missing metadata
@@ -232,8 +234,11 @@ def summarize_clusters(
     # Compute NBA/soccer post count per cluster
     cluster_cats = {}
     for cid, posts in cluster_posts.items():
-        nba_soccer_count = sum(is_nba_or_soccer(p) for p in posts)
+        # Filter out None posts to avoid AttributeError
+        valid_posts = [p for p in posts if p is not None]
+        nba_soccer_count = sum(is_nba_or_soccer(p) for p in valid_posts)
         cluster_cats[cid] = nba_soccer_count
+
     # Select top N clusters by NBA/soccer post count
     top_clusters = sorted(cluster_cats.items(), key=lambda x: x[1], reverse=True)[:top_n_clusters]
     top_cluster_ids = set(cid for cid, count in top_clusters if count > 0)
