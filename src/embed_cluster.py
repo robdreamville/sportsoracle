@@ -93,6 +93,24 @@ def save_results(embeddings, metadata, labels):
             f.write(json.dumps(item_out, ensure_ascii=False) + "\n")
     np.save(os.path.join(DATA_DIR, "labels.npy"), labels)
 
+
+# Run the embedding and clustering pipeline
+def run_pipeline(method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
+    """
+    Run the embedding and clustering pipeline.
+    method: 'kmeans' or 'dbscan'
+    """
+    metadata, texts = load_data()
+    embeddings = embed_texts(texts)
+    labels = cluster_embeddings(
+        embeddings,
+        method=method,
+        n_clusters=n_clusters,
+        dbscan_eps=dbscan_eps,
+        dbscan_min_samples=dbscan_min_samples
+    )
+    save_results(embeddings, metadata, labels)
+
 # Allow this script to be run standalone for testing
 if __name__ == "__main__":
     # Default: KMeans. To use DBSCAN, call run_pipeline(method="dbscan", dbscan_eps=0.5, dbscan_min_samples=5)
