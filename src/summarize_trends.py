@@ -212,6 +212,7 @@ def summarize_clusters(
     # Initialize KeyBERT with the same embedding model as used for clustering
     # Always use GPU if available
     from sentence_transformers import SentenceTransformer
+    # Use the global torch import, do not shadow or re-import
     device = "cuda" if torch.cuda.is_available() else "cpu"
     embed_model = SentenceTransformer("all-MiniLM-L6-v2", device=device)
     kw_model = KeyBERT(model=embed_model)
