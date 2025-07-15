@@ -139,3 +139,6 @@ def summarize_clusters(
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(summaries, f, indent=2)
     print(f"Wrote cluster summaries to {out_path}")
+
+if __name__ == "__main__":
+    summarize_clusters(generate_summary=True)
