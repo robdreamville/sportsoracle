@@ -9,7 +9,7 @@ import os
 import json
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, DBSCAN
 
 # Directory where all processed data will be stored
 DATA_DIR = "/content/sportsoracle/data"
@@ -53,13 +53,28 @@ def embed_texts(texts, model_name="all-MiniLM-L6-v2"):
     embeddings = model.encode(texts, show_progress_bar=True, device=device)
     return embeddings
 
-def cluster_embeddings(embeddings, n_clusters=20):
+def cluster_embeddings(embeddings, method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
     """
-    Cluster embeddings using KMeans.
+    Cluster embeddings using KMeans or DBSCAN.
+    method: 'kmeans' or 'dbscan'
+    n_clusters: used only for KMeans
+    dbscan_eps, dbscan_min_samples: used only for DBSCAN
+    Returns: cluster labels (array)
     """
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-    labels = kmeans.fit_predict(embeddings)
-    return labels
+    if method == "kmeans":
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        labels = kmeans.fit_predict(embeddings)
+        print(f"[INFO] KMeans produced {len(set(labels))} clusters.")
+        return labels
+    elif method == "dbscan":
+        dbscan = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples, n_jobs=-1)
+        labels = dbscan.fit_predict(embeddings)
+        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+        n_noise = list(labels).count(-1)
+        print(f"[INFO] DBSCAN produced {n_clusters} clusters, {n_noise} noise points.")
+        return labels
+    else:
+        raise ValueError(f"Unknown clustering method: {method}")
 
 def save_results(embeddings, metadata, labels):
     """
@@ -77,19 +92,23 @@ def save_results(embeddings, metadata, labels):
         json.dump(clusters, f, indent=2)
     print(f"Saved embeddings ({len(embeddings)}), metadata, and clusters.")
 
-def run_pipeline():
+def run_pipeline(method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
     """
-    Run the full embedding and clustering pipeline:
-      - Load data
-      - Generate embeddings
-      - Cluster embeddings
-      - Save results
+    Run the embedding and clustering pipeline.
+    method: 'kmeans' or 'dbscan'
     """
     metadata, texts = load_data()
     embeddings = embed_texts(texts)
-    labels = cluster_embeddings(embeddings)
+    labels = cluster_embeddings(
+        embeddings,
+        method=method,
+        n_clusters=n_clusters,
+        dbscan_eps=dbscan_eps,
+        dbscan_min_samples=dbscan_min_samples
+    )
     save_results(embeddings, metadata, labels)
 
 # Allow this script to be run standalone for testing
 if __name__ == "__main__":
+    # Default: KMeans. To use DBSCAN, call run_pipeline(method="dbscan", dbscan_eps=0.5, dbscan_min_samples=5)
     run_pipeline()

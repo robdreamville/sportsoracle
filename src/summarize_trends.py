@@ -100,6 +100,33 @@ def get_translator(lang_code):
     return get_translator.cache[model_name]
 
 # -------------------------
+# Summarizer pipeline cache and utility
+# -------------------------
+def get_summarizer(lang_code):
+    """
+    Return a summarization pipeline for the given language code.
+    Uses BART for English, mBART for other languages.
+    """
+    if not hasattr(get_summarizer, "cache"):
+        get_summarizer.cache = {}
+    if lang_code == "en":
+        model_name = "facebook/bart-large-cnn"
+        tokenizer_kwargs = {}
+    else:
+        model_name = "facebook/mbart-large-50-many-to-many-mmt"
+        # Set forced_bos_token_id for English output if desired, else summarize in detected language
+        tokenizer_kwargs = {"src_lang": lang_code, "tgt_lang": "en_XX"}
+    cache_key = (model_name, tuple(tokenizer_kwargs.items()))
+    if cache_key not in get_summarizer.cache:
+        get_summarizer.cache[cache_key] = pipeline(
+            "summarization",
+            model=model_name,
+            device=0,
+            tokenizer_kwargs=tokenizer_kwargs
+        )
+    return get_summarizer.cache[cache_key]
+
+# -------------------------
 # Translate any text to English if needed, with logging
 # -------------------------
 def translate_text(text, lang, field_name="text", cid=None):
@@ -172,9 +199,6 @@ def summarize_clusters(
     top_clusters = sorted(cluster_cats.items(), key=lambda x: x[1], reverse=True)[:top_n_clusters]
     top_cluster_ids = set(cid for cid, count in top_clusters if count > 0)
 
-    # Instantiate English summarizer once
-    summarizer = pipeline("summarization", model="facebook/bart-large-cnn", device=0)
-
     summaries = {}
     def safe_summary(summary_sentence):
         if not summary_sentence or not summary_sentence.strip():
@@ -233,30 +257,28 @@ def summarize_clusters(
                     lang = detect(concat_text[:400])
                 except Exception:
                     lang = "en"
-                if lang != "en":
-                    print(f"[INFO] Translating summary input for cluster {cid} from {lang} to en")
-                    translator = get_translator(lang)
-                    if translator:
-                        try:
-                            translation = translator(concat_text, max_length=2000)[0]["translation_text"]
-                            concat_text = clean_unicode(translation)
-                        except Exception as e:
-                            print(f"[ERROR] Translation failed for summary in cluster {cid}: {e}")
-                            summary_sentence = "[No summary – translation failed]"
-                            concat_text = ""
-                    else:
-                        print(f"[WARN] No translator for summary in cluster {cid} (lang {lang})")
-                concat_text = clean_unicode(concat_text)
-                if not summary_sentence and concat_text:
-                    try:
+                # Use BART for English, mBART for other languages
+                summarizer = get_summarizer(lang)
+                try:
+                    if lang == "en":
                         summary_out = summarizer(concat_text, max_length=60, min_length=15, do_sample=False)
-                        summary_sentence = summary_out[0]["summary_text"].strip()
-                        summary_sentence = clean_unicode(summary_sentence)
-                        if not summary_sentence:
-                            summary_sentence = "[No summary]"
-                    except Exception as e:
-                        print(f"[ERROR] Summarization failed for cluster {cid}: {e}")
-                        summary_sentence = f"[No summary]"
+                    else:
+                        # mBART: set src_lang and tgt_lang for English output
+                        summary_out = summarizer(
+                            concat_text,
+                            max_length=60,
+                            min_length=15,
+                            do_sample=False,
+                            src_lang=lang,
+                            tgt_lang="en_XX"
+                        )
+                    summary_sentence = summary_out[0]["summary_text"].strip()
+                    summary_sentence = clean_unicode(summary_sentence)
+                    if not summary_sentence:
+                        summary_sentence = "[No summary]"
+                except Exception as e:
+                    print(f"[ERROR] Summarization failed for cluster {cid} (lang {lang}): {e}")
+                    summary_sentence = f"[No summary]"
         if not summary_sentence:
             summary_sentence = "[No summary]"
         # --- Save cluster summary ---

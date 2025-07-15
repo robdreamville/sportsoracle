@@ -16,7 +16,7 @@ def main():
     """
     Run the full SportsOracle pipeline:
       - Scrape Reddit and ESPN
-      - Embed and cluster posts
+      - Embed and cluster posts (KMeans or DBSCAN)
       - (Planned) Summarize and index trends
     """
     print("\n🚀 Running full SportsOracle pipeline...\n")
@@ -25,7 +25,9 @@ def main():
     run_scrape()
 
     # Step 2: Embed and cluster posts
-    run_pipeline()
+    # To use DBSCAN instead of KMeans, pass method="dbscan" to run_pipeline:
+    # run_pipeline(method="dbscan", dbscan_eps=0.5, dbscan_min_samples=5)
+    run_pipeline()  # Default: KMeans
 
     # (Planned) Step 3: Summarize clusters, build FAISS index, serve dashboard
     # from src.summarize_trends import summarize_clusters
