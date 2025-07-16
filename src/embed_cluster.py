@@ -13,6 +13,8 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.cluster import KMeans, DBSCAN
 from datasets import load_dataset
+from bertopic import BERTopic
+from hdbscan import HDBSCAN
 
 # Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
 def get_project_root():
@@ -69,16 +71,16 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined_en.jsonl")):
     texts = [item["text_for_embedding"] for item in metadata]
     return metadata, texts
 
-def embed_texts(texts, model_name="all-MiniLM-L6-v2"):
+def embed_texts(texts, model_name="all-MiniLM-L6-v2", batch_size=64):
     """
     Generate embeddings for all texts using SentenceTransformers.
     Uses GPU if available.
     """
     model = SentenceTransformer(model_name)
     device = "cuda" if model.device.type == "cuda" else "cpu"
-    print(f"Using device: {device}")
+    print(f"Embedding on device: {device}")
     # Efficient batch encoding
-    embeddings = model.encode(texts, show_progress_bar=True, device=device, batch_size=64)
+    embeddings = model.encode(texts, show_progress_bar=True, device=device, batch_size=batch_size)
     return embeddings
 
 def cluster_embeddings(embeddings, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=10):
@@ -143,27 +145,19 @@ def save_results(embeddings, metadata, labels):
 
 
 
-def run_pipeline(method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
+def run_pipeline(method="bertopic", **kwargs):
     """
-    Run the embedding and clustering pipeline.
+    Full pipeline: load data, embed, cluster, and save results.
     Args:
-        method: 'kmeans' or 'dbscan'
-        n_clusters: number of clusters for KMeans
-        dbscan_eps: epsilon for DBSCAN
-        dbscan_min_samples: min samples for DBSCAN
+        method: 'hdbscan' or 'bertopic'
+        kwargs: passed to cluster_embeddings
     """
     metadata, texts = load_data()
     embeddings = embed_texts(texts)
-    labels = cluster_embeddings(
-        embeddings,
-        method=method,
-        n_clusters=n_clusters,
-        dbscan_eps=dbscan_eps,
-        dbscan_min_samples=dbscan_min_samples
-    )
+    labels, model = cluster_embeddings(embeddings, method=method, **kwargs)
     save_results(embeddings, metadata, labels)
+    print(f"Pipeline complete with method={method}. Produced {len(set(labels))} clusters.")
 
-# Allow this script to be run standalone for testing
 if __name__ == "__main__":
-    # Default: KMeans. To use DBSCAN, call run_pipeline(method="dbscan", dbscan_eps=0.5, dbscan_min_samples=5)
-    run_pipeline()
+    # Default: BERTopic clustering
+    run_pipeline(method="bertopic")
