@@ -81,27 +81,34 @@ def embed_texts(texts, model_name="all-MiniLM-L6-v2"):
     embeddings = model.encode(texts, show_progress_bar=True, device=device, batch_size=64)
     return embeddings
 
-def cluster_embeddings(embeddings, method="kmeans", n_clusters=20, dbscan_eps=0.5, dbscan_min_samples=5):
+def cluster_embeddings(embeddings, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=10):
     """
-    Cluster embeddings using KMeans or DBSCAN.
+    Cluster embeddings using HDBSCAN or BERTopic.
+
     Args:
-        embeddings: np.ndarray or list
-        method: 'kmeans' or 'dbscan'
-        n_clusters: used only for KMeans
-        dbscan_eps, dbscan_min_samples: used only for DBSCAN
+        embeddings: np.ndarray of shape (n_samples, n_features)
+        method: 'hdbscan' or 'bertopic'
+        hdbscan_min_cluster_size: HDBSCAN minimum cluster size
+        bertopic_min_topic_size: BERTopic minimum topic size
+
     Returns:
-        cluster labels (array)
+        labels: array of cluster/topic labels for each embedding
+        model: fitted clustering or topic model
     """
-    if method == "kmeans":
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        labels = kmeans.fit_predict(embeddings)
-        return labels
-    elif method == "dbscan":
-        dbscan = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples, n_jobs=-1)
-        labels = dbscan.fit_predict(embeddings)
-        return labels
+    if method == "hdbscan":
+        # HDBSCAN infers clusters and labels noise as -1
+        model = HDBSCAN(min_cluster_size=hdbscan_min_cluster_size)
+        labels = model.fit_predict(embeddings)
+        return labels, model
+
+    elif method == "bertopic":
+        # BERTopic handles embedding clustering and topic extraction
+        model = BERTopic(min_topic_size=bertopic_min_topic_size)
+        labels, _ = model.fit_transform(embeddings)
+        return labels, model
+
     else:
-        raise ValueError(f"Unknown clustering method: {method}")
+        raise ValueError(f"Unknown clustering method: {method}. Choose 'hdbscan' or 'bertopic'.")
 
 def save_results(embeddings, metadata, labels):
     """
