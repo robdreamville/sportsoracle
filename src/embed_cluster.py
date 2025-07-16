@@ -143,6 +143,18 @@ def save_results(embeddings, metadata, labels):
     with open(os.path.join(DATA_DIR, "clusters.json"), "w", encoding="utf-8") as f:
         json.dump(clusters, f, ensure_ascii=False, indent=2)
 
+     # If BERTopic, extract and save topic keywords
+    if method == "bertopic" and model is not None and isinstance(model, BERTopic):
+        keywords_map = {}
+        for cid in clusters:
+            topic = model.get_topic(cid)
+            # model.get_topic(-1) returns outliers; skip if empty
+            if topic:
+                keywords_map[cid] = [word for word, _ in topic]
+        with open(os.path.join(DATA_DIR, "cluster_keywords.json"), "w", encoding="utf-8") as f:
+            json.dump(keywords_map, f, ensure_ascii=False, indent=2)
+
+    print(f"Saved embeddings, labels, metadata, clusters{' and keywords' if method=='bertopic' else ''}.")
 
 
 def run_pipeline(method="bertopic", **kwargs):
@@ -155,7 +167,7 @@ def run_pipeline(method="bertopic", **kwargs):
     metadata, texts = load_data()
     embeddings = embed_texts(texts)
     labels, model = cluster_embeddings(embeddings, method=method, **kwargs)
-    save_results(embeddings, metadata, labels)
+    save_results(embeddings, metadata, labels, model=model, method=method)
     print(f"Pipeline complete with method={method}. Produced {len(set(labels))} clusters.")
 
 if __name__ == "__main__":
