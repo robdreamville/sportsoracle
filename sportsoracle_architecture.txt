@@ -1,62 +1,143 @@
-# SportsOracle Project Architecture & Structure
+
+# SportsOracle Project Architecture & Structure (2025)
 
 ## Overview
-SportsOracle is a modular pipeline for scraping, embedding, clustering, and summarizing sports news and social media content. It supports multilingual data, robust keyword and summary extraction, and is designed for extensibility and maintainability.
+SportsOracle is a modular, multilingual pipeline for scraping, normalizing, embedding, clustering, and summarizing sports news and social media content. It is designed for scalability, GPU acceleration, and robust downstream analytics (summarization, search, dashboard, QA/chatbot).
 
 ---
 
-## Directory Structure
+## Directory & File Structure
 
-- `main.py`                : Pipeline entrypoint; orchestrates scraping, embedding, clustering, and (planned) summarization/indexing.
-- `run_scrape.py`          : Runs Reddit and ESPN scrapers, saves combined data.
-- `requirements.txt`       : Python dependencies (transformers, keybert, scikit-learn, etc).
+- `main.py`                : Pipeline entrypoint; orchestrates the full workflow (scraping, language normalization, embedding, clustering, summarization, indexing).
+- `run_scrape.py`          : Runs Reddit and ESPN scrapers, saves combined data as JSONL.
+- `requirements.txt`       : Python dependencies (transformers, keybert, scikit-learn, datasets, etc).
 - `README.md`              : Project documentation.
+- `validate_data.py`       : Validates the integrity and schema of all data files (checks for required fields, uniqueness, JSONL validity).
 - `data/`                  : Raw and processed data files.
-    - `raw_combined.json`  : Combined Reddit + ESPN posts.
-    - `raw_espn.json`      : ESPN RSS articles.
-    - `raw_posts.json`     : Reddit posts.
-    - `clusters.json`      : Cluster assignments for each post.
-    - `metadata.jsonl`     : Metadata for each post (one JSON per line).
+    - `raw_posts.jsonl`    : Reddit posts (JSONL).
+    - `raw_espn.jsonl`     : ESPN RSS articles (JSONL).
+    - `raw_combined.jsonl` : Combined Reddit + ESPN posts (JSONL).
+    - `raw_combined_en.jsonl`: Language-normalized (English) posts, with *_en fields and detected_language.
+    - `embeddings.npy`     : Numpy array of post embeddings.
+    - `labels.npy`         : Numpy array of cluster labels.
+    - `metadata.jsonl`     : Metadata for each post, with cluster assignments.
+    - `clusters.json`      : Cluster assignments (cluster_id → list of post IDs).
+    - `faiss.index`        : (Planned) FAISS vector index for semantic search.
+    - `index_mapping.json` : (Planned) Mapping from FAISS index to metadata.
 - `outputs/`               : Final outputs.
     - `trends_summary.json`: Cluster-level summaries, keywords, and top titles.
 - `src/`                   : Source code modules.
-    - `reddit_scraper.py`  : Reddit scraping using PRAW.
-    - `espn_rss_scraper.py`: ESPN RSS scraping using feedparser.
-    - `embed_cluster.py`   : Embedding (SentenceTransformers) and clustering (KMeans/DBSCAN).
-    - `summarize_trends.py`: Cluster summarization, translation, keyword extraction, unicode cleaning.
-    - `chatbot_interface.py`: (Planned) Chatbot/QA interface.
-    - `faiss_indexer.py`   : (Planned) FAISS semantic search indexer.
+    - `reddit_scraper.py`      : Scrapes Reddit using PRAW; infers category, outputs unified text fields.
+    - `espn_rss_scraper.py`    : Scrapes ESPN RSS feeds using feedparser; outputs unified text fields.
+    - `preprocess_language.py` : Detects language, translates all text fields to English, outputs *_en fields and detected_language (batch, chunked, robust, Datasets-based).
+    - `embed_cluster.py`       : Loads normalized data, generates embeddings (SentenceTransformers), clusters (KMeans/DBSCAN), saves results for downstream use.
+    - `summarize_trends.py`    : Loads clusters and metadata, extracts keywords (KeyBERT/tokenizer), summarizes clusters (BART/mBART), outputs trends_summary.json.
+    - `cluster_loader.py`      : Loads clusters and metadata, ensures all text is English, provides utility for downstream summarization/keyword extraction.
+    - `keyword_extractor.py`   : Batch keyword extraction using transformers tokenizer, robust stopword filtering, auto-translation if needed.
+    - `summarizer.py`          : Batch summarization using transformers pipeline, auto-translation if needed.
+    - `language_normalizer.py` : (Legacy) Detects language and translates all text fields to English, outputs cleaned JSONL.
+    - `faiss_indexer.py`       : (Planned) Builds FAISS index for semantic search, provides search API.
+    - `chatbot_interface.py`   : (Planned) Chatbot/QA interface for querying trends.
 
 ---
 
-## Pipeline Flow
+## Pipeline Workflow & Data Flow
 
 1. **Scraping**
-   - `run_scrape.py` calls:
-     - `src/reddit_scraper.py` (Reddit posts)
-     - `src/espn_rss_scraper.py` (ESPN articles)
-   - Output: `data/raw_combined.json`
+   - `run_scrape.py` orchestrates scraping:
+     - Calls `src/reddit_scraper.py` to scrape sports subreddits (PRAW), infers category, outputs `raw_posts.jsonl`.
+     - Calls `src/espn_rss_scraper.py` to scrape ESPN RSS feeds (feedparser), outputs `raw_espn.jsonl`.
+     - Combines all posts into `raw_combined.jsonl` (JSONL, Datasets-ready).
 
-2. **Embedding & Clustering**
-   - `src/embed_cluster.py` loads combined data, generates embeddings (all-MiniLM-L6-v2), clusters with KMeans or DBSCAN.
-   - Outputs: `data/embeddings.npy`, `data/clusters.json`, `data/metadata.jsonl`
+2. **Language Normalization**
+   - `src/preprocess_language.py` (preferred) or `src/language_normalizer.py`:
+     - Loads `raw_combined.jsonl` using Hugging Face Datasets.
+     - Detects language for each post (langdetect).
+     - Translates all text fields to English using MarianMT (Helsinki-NLP) with chunked, batch translation for GPU efficiency.
+     - Filters out posts with unsupported languages.
+     - Outputs `raw_combined_en.jsonl` with *_en fields and detected_language.
 
-3. **Summarization & Keyword Extraction**
-   - `src/summarize_trends.py` loads clusters and metadata, cleans and translates text, extracts keywords (KeyBERT + fallback), generates summaries (BART/mBART), outputs `outputs/trends_summary.json`.
+3. **Embedding & Clustering**
+   - `src/embed_cluster.py`:
+     - Loads `raw_combined_en.jsonl` using Datasets.
+     - Deduplicates by ID, filters invalid entries.
+     - Constructs `text_for_embedding` from *_en fields (always English).
+     - Generates embeddings using SentenceTransformers (MiniLM, GPU-accelerated).
+     - Clusters embeddings using KMeans (default) or DBSCAN.
+     - Saves `embeddings.npy`, `labels.npy`, `metadata.jsonl` (with cluster assignments), and `clusters.json` (cluster_id → post IDs).
 
-4. **(Planned) Semantic Search & Dashboard**
-   - `src/faiss_indexer.py` (planned): Build FAISS index for semantic search.
-   - `src/chatbot_interface.py` (planned): Interactive QA/chatbot interface.
-   - Dashboard UI (planned): Streamlit or similar for trend exploration.
+4. **Summarization & Keyword Extraction**
+   - `src/summarize_trends.py`:
+     - Loads clusters (`clusters.json`) and metadata (`metadata.jsonl`).
+     - For each cluster, extracts relevant posts, builds cluster-level text.
+     - Extracts keywords using `src/keyword_extractor.py` (tokenizer-based, robust stopword filtering, auto-translation if needed).
+     - Summarizes cluster text using `src/summarizer.py` (BART/mBART, auto-translation if needed).
+     - Outputs `outputs/trends_summary.json` (cluster summaries, keywords, top titles).
+
+5. **(Planned) Semantic Search & Dashboard**
+   - `src/faiss_indexer.py`: Builds FAISS vector index from embeddings, provides fast semantic search API.
+   - `src/chatbot_interface.py`: (Planned) Interactive QA/chatbot interface for querying trends and posts.
+   - Dashboard UI (planned): Streamlit or similar for trend exploration and filtering.
+
+---
+
+## File & Function Responsibilities (Detailed)
+
+- **main.py**
+  - `main()`: Orchestrates the full pipeline (scraping, embedding, clustering, summarization, indexing).
+
+- **run_scrape.py**
+  - `run_scrape()`: Calls Reddit and ESPN scrapers, writes all raw and combined data files.
+
+- **src/reddit_scraper.py**
+  - `scrape_reddit_posts(subreddits, limit, data_dir)`: Scrapes posts from subreddits, infers category, outputs unified text fields.
+
+- **src/espn_rss_scraper.py**
+  - `scrape_espn_rss(data_dir)`: Scrapes ESPN RSS feeds, outputs unified text fields.
+
+- **src/preprocess_language.py**
+  - `preprocess_language(in_path, out_path)`: Loads raw posts, detects language, translates all text fields to English (batch, chunked), filters unsupported languages, outputs *_en fields and detected_language.
+
+- **src/embed_cluster.py**
+  - `load_data(path)`: Loads normalized data, deduplicates, constructs text_for_embedding from *_en fields.
+  - `embed_texts(texts, model_name)`: Generates embeddings using SentenceTransformers (GPU if available).
+  - `cluster_embeddings(embeddings, method, n_clusters, dbscan_eps, dbscan_min_samples)`: Clusters embeddings using KMeans or DBSCAN.
+  - `save_results(embeddings, metadata, labels)`: Saves all outputs for downstream use.
+  - `run_pipeline(...)`: Runs the full embedding & clustering pipeline.
+
+- **src/summarize_trends.py**
+  - `summarize_trends(...)`: Loads clusters and metadata, extracts keywords, summarizes clusters, outputs trends_summary.json.
+
+- **src/cluster_loader.py**
+  - `load_metadata(path, translate)`: Loads metadata, ensures all text is English, adds *_en fields if needed.
+  - `load_clusters(path)`: Loads clusters.json as a dict.
+
+- **src/keyword_extractor.py**
+  - `KeywordExtractor`: Class for batch keyword extraction using transformers tokenizer, robust stopword filtering, auto-translation.
+
+- **src/summarizer.py**
+  - `Summarizer`: Class for batch summarization using transformers pipeline, auto-translation.
+
+- **src/language_normalizer.py**
+  - `normalize_language(input_path, output_path)`: (Legacy) Detects language and translates all text fields to English, outputs cleaned JSONL.
+
+- **src/faiss_indexer.py**
+  - `build_faiss_index(...)`: Builds FAISS index from embeddings, saves index and mapping.
+  - `search(query, top_k, ...)`: Searches the FAISS index for similar posts.
+
+- **validate_data.py**
+  - `validate_jsonl(path, required_fields, id_field)`: Validates JSONL files for schema, uniqueness, and integrity.
+  - `main()`: Runs validation on all key data files.
 
 ---
 
 ## Key Features
-- **Multilingual Support**: Translation and summarization for non-English clusters (Helsinki-NLP, mBART).
-- **Robust Keyword Extraction**: KeyBERT with chunking for long texts, fallback to frequency-based keywords.
+- **Multilingual Support**: Robust translation and normalization for non-English posts (Helsinki-NLP MarianMT, mBART).
+- **Efficient, GPU-Accelerated Processing**: Batch, chunked translation and embedding for scalability.
+- **Robust Keyword Extraction**: Tokenizer-based, with fallback to frequency-based keywords.
 - **Unicode Normalization**: Ensures all output is ASCII-clean.
-- **Clustering Options**: KMeans (default) or DBSCAN (configurable).
-- **Extensible**: Modular codebase for easy addition of new sources, models, or UI components.
+- **Flexible Clustering**: KMeans (default) or DBSCAN (configurable).
+- **Extensible & Modular**: Easy to add new sources, models, or UI components.
 
 ---
 
@@ -77,3 +158,7 @@ SportsOracle is a modular pipeline for scraping, embedding, clustering, and summ
 ## Authors
 - Project owner: robdreamville
 - AI assistant: GitHub Copilot
+
+
+#TODO update cluster algo 
+#TODO summarize_trends, cluster_loader, keyword_extractor, summarizer

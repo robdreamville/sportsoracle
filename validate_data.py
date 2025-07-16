@@ -54,6 +54,7 @@ def main():
     else:
         print(f"{espn_path} not found.")
 
+
     # Validate combined file (mixed sources)
     if combined_path.exists():
         errors = []
@@ -90,6 +91,52 @@ def main():
             print(f"✅ {combined_path} passed validation!")
     else:
         print(f"{combined_path} not found.")
+
+    # Validate language-normalized (English) file
+    combined_en_path = data_dir / "raw_combined_en.jsonl"
+    en_fields_common = ["id", "source", "detected_language"]
+    reddit_en_fields = ["title_en", "selftext_en", "text_en"]
+    espn_en_fields = ["title_en", "summary_en", "text_en"]
+    if combined_en_path.exists():
+        errors = []
+        ids = set()
+        count = 0
+        with open(combined_en_path, "r", encoding="utf-8") as f:
+            for line in f:
+                count += 1
+                try:
+                    obj = json.loads(line)
+                except Exception as e:
+                    errors.append(f"Line {count}: JSON decode error: {e}")
+                    continue
+                # Check common fields
+                for field in en_fields_common:
+                    if field not in obj:
+                        errors.append(f"Line {count}: Missing field '{field}'")
+                src = obj.get("source", "").lower()
+                if src == "reddit":
+                    for field in reddit_en_fields:
+                        if field not in obj:
+                            errors.append(f"Line {count}: [Reddit] Missing field '{field}'")
+                elif src == "espn":
+                    for field in espn_en_fields:
+                        if field not in obj:
+                            errors.append(f"Line {count}: [ESPN] Missing field '{field}'")
+                else:
+                    errors.append(f"Line {count}: Unknown source '{src}'")
+                # Check for duplicate IDs
+                if obj.get("id") in ids:
+                    errors.append(f"Line {count}: Duplicate id '{obj.get('id')}'")
+                ids.add(obj.get("id"))
+        print(f"Validated {count} lines in {combined_en_path}")
+        if errors:
+            print(f"\n❌ ERRORS in {combined_en_path}:")
+            for err in errors:
+                print("  -", err)
+        else:
+            print(f"✅ {combined_en_path} passed validation!")
+    else:
+        print(f"{combined_en_path} not found.")
 
 if __name__ == "__main__":
     main()
