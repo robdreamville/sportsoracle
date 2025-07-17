@@ -139,21 +139,34 @@ def save_results(embeddings, metadata, labels, model=None, method="bertopic"):
             cid = int(label)
             pid = str(item_out.get("id", "")).strip()
             if cid not in clusters:
-                clusters[cid] = []
-            clusters[cid].append(pid)
-    # Save clusters.json for downstream summarization
-    with open(os.path.join(DATA_DIR, "clusters.json"), "w", encoding="utf-8") as f:
-        json.dump(clusters, f, ensure_ascii=False, indent=2)
-
-    # BERTopic‑only: extract and persist topic keywords
+                clusters[cid] = {"post_ids": []}
+            clusters[cid]["post_ids"].append(pid)
+    
+    
+        # BERTopic‑only: enrich clusters with titles & keywords, then save clusters.json
     if method == "bertopic" and model is not None:
+        # Extract keyword lists
         keywords_map = {
             cid: [word for word, _ in model.get_topic(cid)]
             for cid in clusters
             if model.get_topic(cid)
         }
-        with open(os.path.join(DATA_DIR, "cluster_keywords.json"), "w", encoding="utf-8") as f:
-            json.dump(keywords_map, f, ensure_ascii=False, indent=2)
+        # Extract human‑readable titles
+        import pandas as pd
+        info = model.get_topic_info()
+        titles_map = {
+            int(row.Topic): row.Name
+            for row in info.itertuples(index=False)
+            if row.Topic != -1
+        }
+        # Merge into clusters dict
+        for cid, data in clusters.items():
+            clusters[cid]["title"]    = titles_map.get(cid, "")
+            clusters[cid]["keywords"] = keywords_map.get(cid, [])
+
+    # Save enriched clusters.json
+    with open(os.path.join(DATA_DIR, "clusters.json"), "w", encoding="utf-8") as f:
+        json.dump(clusters, f, ensure_ascii=False, indent=2)
 
     print(f"Saved embeddings, labels, metadata, clusters{' and keywords' if method=='bertopic' else ''}.")
 
