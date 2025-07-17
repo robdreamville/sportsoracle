@@ -65,8 +65,8 @@ def clean_text(text):
     text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
     return text.strip()
 
-def chunk_text(text, tokenizer, max_tokens=512, max_chunks=10):
-    """Chunk text into pieces <= max_tokens using the tokenizer."""
+def chunk_text(text, tokenizer, max_tokens=460, max_chunks=10):
+    """Chunk text into pieces <= max_tokens (0.9 * 512) using the tokenizer."""
     text = clean_text(text)
     if not text:
         return [text]
@@ -77,24 +77,37 @@ def chunk_text(text, tokenizer, max_tokens=512, max_chunks=10):
     current_token_count = 0
     
     for sentence in sentences:
-        tokens = tokenizer.encode(sentence, add_special_tokens=False)
-        if current_token_count + len(tokens) <= max_tokens:
+        # Tokenize sentence with special tokens to mimic pipeline behavior
+        tokens = tokenizer.encode(sentence, add_special_tokens=True)
+        token_count = len(tokens)
+        
+        if current_token_count + token_count <= max_tokens:
             current_chunk.append(sentence)
-            current_token_count += len(tokens)
+            current_token_count += token_count
         else:
             if current_chunk:
                 chunks.append(" ".join(current_chunk))
                 current_chunk = [sentence]
-                current_token_count = len(tokens)
+                current_token_count = token_count
             else:
                 # Handle single sentence longer than max_tokens
-                chunks.append(sentence)
+                encoded = tokenizer(sentence, max_length=max_tokens, truncation=True, return_tensors="pt")
+                decoded = tokenizer.decode(encoded["input_ids"][0], skip_special_tokens=True)
+                chunks.append(decoded)
                 current_token_count = 0
         if len(chunks) >= max_chunks:
             break
     
     if current_chunk:
         chunks.append(" ".join(current_chunk))
+    
+    # Verify chunk lengths
+    for chunk in chunks:
+        tokens = tokenizer.encode(chunk, add_special_tokens=True)
+        if len(tokens) > max_tokens:
+            print(f"[WARN] Chunk exceeds {max_tokens} tokens: {len(tokens)} tokens for chunk: {chunk[:50]}...")
+            encoded = tokenizer(chunk, max_length=max_tokens, truncation=True, return_tensors="pt")
+            chunks[chunks.index(chunk)] = tokenizer.decode(encoded["input_ids"][0], skip_special_tokens=True)
     
     return chunks if chunks else [text]
 
@@ -126,9 +139,9 @@ def translate_to_en_batch(texts, lang):
         if not text:
             continue
         try:
-            # Chunk text based on token count
-            to_translate = chunk_text(text, tokenizer, max_tokens=512)
-            results = translator(to_translate, max_length=512, batch_size=8, truncation=True)
+            # Chunk text based on token count (0.9 * max_length)
+            to_translate = chunk_text(text, tokenizer, max_tokens=460)
+            results = translator(to_translate, max_length=512, batch_size=4, truncation=True)
             translated_chunks = [r["translation_text"] for r in results]
             translated[idx] = " ".join(translated_chunks)
         except Exception as e:
@@ -192,7 +205,7 @@ def preprocess_language(
 ):
     """Process JSONL file to detect languages and translate to English."""
     ds = load_dataset("json", data_files=in_path, split="train")
-    ds = ds.map(detect_and_translate_batch, batched=True, batch_size=32)
+    ds = ds.map(detect_and_translate_batch, batched=True, batch_size=16)
     ds.to_json(out_path, force_ascii=False, lines=True)
     print(f"[INFO] Wrote language-normalized data to {out_path}")
 
