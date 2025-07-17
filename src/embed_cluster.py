@@ -121,7 +121,7 @@ def embed_texts(texts, model_name="all-MiniLM-L6-v2", batch_size=64):
     embeddings = model.encode(texts, show_progress_bar=True, device=device, batch_size=batch_size)
     return embeddings
 
-def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=10):
+def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=5):
     """
     Cluster embeddings using HDBSCAN or BERTopic.
 
