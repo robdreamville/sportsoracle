@@ -11,7 +11,6 @@ import os
 import json
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from sklearn.cluster import KMeans, DBSCAN
 from datasets import load_dataset
 from bertopic import BERTopic
 from hdbscan import HDBSCAN
