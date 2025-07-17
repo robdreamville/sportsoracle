@@ -1,12 +1,18 @@
 import os
 import json
 import nltk
+import re
 from datasets import load_dataset, Dataset
 import fasttext
 import torch
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer
 from collections import defaultdict
 import urllib.request
+from tqdm import tqdm
+
+# Set CUDA debugging environment variables
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+os.environ["TORCH_USE_CUDA_DSA"] = "1"
 
 # Download NLTK punkt for sentence tokenization
 nltk.download('punkt', quiet=True)
@@ -17,6 +23,7 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 # Download fasttext language detection model if not already present
 def download_fasttext_model(model_path='src/lid.176.bin'):
     if not os.path.exists(model_path):
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
         print("Downloading FastText language identification model...")
         url = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
         urllib.request.urlretrieve(url, model_path)
@@ -24,7 +31,7 @@ def download_fasttext_model(model_path='src/lid.176.bin'):
     else:
         print("FastText model already exists.")
 
-# Load fasttext model for language detection (adjust path if needed)
+# Load fasttext model for language detection
 download_fasttext_model()
 fasttext_model = fasttext.load_model('src/lid.176.bin')
 
@@ -42,31 +49,60 @@ lang2translator = {
     "fi": "Helsinki-NLP/opus-mt-fi-en",  # Finnish
     "tl": "Helsinki-NLP/opus-mt-tl-en",  # Tagalog
     "pl": "Helsinki-NLP/opus-mt-pl-en",  # Polish
-    "pt": "Helsinki-NLP/opus-mt-roa-en",  # Portuguese → English (Romance languages model)
-    "no": "Helsinki-NLP/opus-mt-nb-en",  # Norwegian → English (Norwegian Bokmål)
+    "pt": "Helsinki-NLP/opus-mt-roa-en",  # Portuguese → English
+    "no": "Helsinki-NLP/opus-mt-nb-en",  # Norwegian → English
+    "ja": "Helsinki-NLP/opus-mt-ja-en",  # Japanese → English
 }
 
 _translator_cache = {}
+_tokenizer_cache = {}
 
-def chunk_text(text, chunk_size=512):
-    """Chunk text into pieces <= chunk_size, splitting on sentence boundaries."""
+def clean_text(text):
+    """Clean text by removing invalid characters and normalizing whitespace."""
+    if not isinstance(text, str):
+        return ""
+    text = re.sub(r'[^\x00-\x7F]+', ' ', text)  # Remove non-ASCII characters
+    text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
+    return text.strip()
+
+def chunk_text(text, tokenizer, max_tokens=512, max_chunks=10):
+    """Chunk text into pieces <= max_tokens using the tokenizer."""
+    text = clean_text(text)
+    if not text:
+        return [text]
+    
     sentences = nltk.sent_tokenize(text)
     chunks = []
-    current_chunk = ""
+    current_chunk = []
+    current_token_count = 0
+    
     for sentence in sentences:
-        if len(current_chunk) + len(sentence) <= chunk_size:
-            current_chunk += sentence + " "
+        tokens = tokenizer.encode(sentence, add_special_tokens=False)
+        if current_token_count + len(tokens) <= max_tokens:
+            current_chunk.append(sentence)
+            current_token_count += len(tokens)
         else:
-            chunks.append(current_chunk.strip())
-            current_chunk = sentence + " "
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+                current_chunk = [sentence]
+                current_token_count = len(tokens)
+            else:
+                # Handle single sentence longer than max_tokens
+                chunks.append(sentence)
+                current_token_count = 0
+        if len(chunks) >= max_chunks:
+            break
+    
     if current_chunk:
-        chunks.append(current_chunk.strip())
-    return chunks
+        chunks.append(" ".join(current_chunk))
+    
+    return chunks if chunks else [text]
 
 def translate_to_en_batch(texts, lang):
     """Batch translation for a list of texts in the same language."""
     if lang == "en" or lang not in lang2translator:
         return texts
+    
     model_name = lang2translator[lang]
     if model_name not in _translator_cache:
         try:
@@ -75,33 +111,55 @@ def translate_to_en_batch(texts, lang):
                 model=model_name,
                 device=0 if torch.cuda.is_available() else -1
             )
+            _tokenizer_cache[model_name] = AutoTokenizer.from_pretrained(model_name)
         except Exception as e:
             print(f"[WARN] Could not load translation model for {lang}: {e}")
             return texts
+    
+    translator = _translator_cache[model_name]
+    tokenizer = _tokenizer_cache[model_name]
     nonempty_indices = [i for i, t in enumerate(texts) if t and t.strip()]
     translated = list(texts)
-    for idx in nonempty_indices:
-        text = texts[idx]
-        to_translate = chunk_text(text) if len(text) > 512 else [text]
+    
+    for idx in tqdm(nonempty_indices, desc=f"Translating {lang}"):
+        text = clean_text(texts[idx])
+        if not text:
+            continue
         try:
-            results = _translator_cache[model_name](to_translate, max_length=512, batch_size=16)
+            # Chunk text based on token count
+            to_translate = chunk_text(text, tokenizer, max_tokens=512)
+            results = translator(to_translate, max_length=512, batch_size=8, truncation=True)
             translated_chunks = [r["translation_text"] for r in results]
             translated[idx] = " ".join(translated_chunks)
         except Exception as e:
-            print(f"[WARN] Translation failed for {lang}: {e}")
-            translated[idx] = text
+            print(f"[WARN] Translation failed for {lang} (text: {text[:50]}...): {e}")
+            # Fallback to CPU
+            try:
+                translator.device = -1
+                results = translator(to_translate, max_length=512, batch_size=1, truncation=True)
+                translated_chunks = [r["translation_text"] for r in results]
+                translated[idx] = " ".join(translated_chunks)
+                translator.device = 0 if torch.cuda.is_available() else -1
+            except Exception as e2:
+                print(f"[WARN] CPU fallback failed for {lang} (text: {text[:50]}...): {e2}")
+                translated[idx] = text
+    
     return translated
 
 def detect_language(text):
     """Detect language using fasttext."""
-    prediction = fasttext_model.predict(text.replace('\n', ' ')[:400])[0][0]
+    text = clean_text(text)
+    if not text:
+        return "en"
+    prediction = fasttext_model.predict(text.replace('\n', ' ')[:200])[0][0]
     return prediction.replace('__label__', '')
 
 def detect_and_translate_batch(batch):
-    titles = [(t or "") for t in batch.get("title", [])]
-    selftexts = [(t or "") for t in batch.get("selftext", [])]
-    summaries = [(t or "") for t in batch.get("summary", [])]
-    texts = [(t or "") for t in batch.get("text", [])]
+    """Detect language and translate batch fields to English."""
+    titles = [(clean_text(t) or "") for t in batch.get("title", [])]
+    selftexts = [(clean_text(t) or "") for t in batch.get("selftext", [])]
+    summaries = [(clean_text(t) or "") for t in batch.get("summary", [])]
+    texts = [(clean_text(t) or "") for t in batch.get("text", [])]
     concat_texts = [f"{a} {b} {c} {d}" for a, b, c, d in zip(titles, selftexts, summaries, texts)]
     langs = [detect_language(ct) if ct.strip() else "en" for ct in concat_texts]
     unidentified_langs = {l for l in langs if l != "en" and l not in lang2translator}
@@ -134,8 +192,8 @@ def preprocess_language(
 ):
     """Process JSONL file to detect languages and translate to English."""
     ds = load_dataset("json", data_files=in_path, split="train")
-    ds = ds.map(detect_and_translate_batch, batched=True, batch_size=64)
-    ds.to_json(out_path, force_ascii=False)
+    ds = ds.map(detect_and_translate_batch, batched=True, batch_size=32)
+    ds.to_json(out_path, force_ascii=False, lines=True)
     print(f"[INFO] Wrote language-normalized data to {out_path}")
 
 if __name__ == "__main__":
