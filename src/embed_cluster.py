@@ -9,11 +9,50 @@
 
 import os
 import json
+
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from datasets import load_dataset
 from bertopic import BERTopic
 from hdbscan import HDBSCAN
+from sklearn.feature_extraction.text import CountVectorizer
+# Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
+
+
+# Custom stopwords for BERTopic (sports, Reddit, platform, filler, numbers, etc)
+# Only include non-meaningful/filler terms, avoid removing trending/semantic words
+BASE_STOPWORDS = set([
+    'the', 'and', 'to', 'of', 'in', 'a', 'is', 'for', 'on', 'with', 'at', 'by', 'an', 'be', 'as', 'from', 'that',
+    'it', 'are', 'was', 'this', 'will', 'has', 'have', 'but', 'not', 'or', 'its', 'after', 'his', 'he', 'she', 'they',
+    'their', 'you', 'we', 'who', 'all', 'about', 'more', 'up', 'out', 'new', 'one', 'over', 'into', 'than', 'just',
+    'so', 'can', 'if', 'no', 'how', 'what', 'when', 'which', 'do', 'did', 'been', 'also', 'had', 'would', 'could',
+    'should', 'our', 'your', 'them', 'get', 'got', 'like', 'now', 'see', 'us', 'off', 'only', 'back', 'time', 'make',
+    'made', 'still', 'very', 'much', 'where', 'why', 'go', 'going', 'may', 'want', 'needs', 'need', 'even', 'most',
+    'first', 'last', 'said', 'says', 'year', 'years', 'day', 'days', 'game', 'games', 'season', 'team', 'teams',
+    'player', 'players', 'coach', 'coaches', 'match', 'matches', 'win', 'won', 'loss', 'losses', 'play', 'playing',
+    'score', 'scored', 'scoring', 'points', 'point', 'home', 'away', 'vs', 'vs.', 'espn', 'reddit', 'category', 'him', 'some'
+])
+CUSTOM_STOPWORDS = BASE_STOPWORDS.union({
+    # General sports filler
+    'fan', 'fans', 'playoffs', 'draft', 'trade', 'traded', 'ranked', 'rank', 
+    'division', 'conference', 'record', 'standings', 'stats', 'stat', 'report', 'rumor', 
+    'injury', 'injured', 'healthy', 'practice', 'lineup',
+    # Contextual noise
+    'thread', 'post', 'title', 'comment', 'op', 'link', 'source',
+    'via', 'tweet', 'video', 'article', 'photo', 'highlight', 'clip',
+    # Numbers that get picked up
+    '2025', '2024', '2023', '10', '20', '30', '40', '50',
+    # Reddit and platform-specific
+    'r', 'u', 'subreddit', 'mod', 'nsfw', 'flair',
+    # Sports generic verbs
+    'watch', 'watching', 'talk', 'talking', 'looks', 'looking', 'feel', 'feeling',
+    'start', 'starting', 'started', 'bench', 'benched',
+    # Outcome-related but vague
+    'better', 'worse', 'good', 'bad', 'crazy', 'insane', 'wild', 'amazing', 'great', 'terrible',
+    # Random junk
+    'etc', 'lol', 'yeah', 'thing', 'stuff'
+})
+
 
 # Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
 def get_project_root():
@@ -82,7 +121,7 @@ def embed_texts(texts, model_name="all-MiniLM-L6-v2", batch_size=64):
     embeddings = model.encode(texts, show_progress_bar=True, device=device, batch_size=batch_size)
     return embeddings
 
-def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=10):
+def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=20):
     """
     Cluster embeddings using HDBSCAN or BERTopic.
 
@@ -102,13 +141,17 @@ def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cl
         labels = model.fit_predict(embeddings)
         return labels, model
 
+
     elif method == "bertopic":
         # BERTopic handles embedding clustering and topic extraction
         if texts is None:
             raise ValueError("BERTopic requires passing `texts` (the list of documents).")
-        model = BERTopic(min_topic_size=bertopic_min_topic_size)
-        # supply both the raw documents and embeddings
+        # Use custom stopwords in vectorizer
+        vectorizer_model = CountVectorizer(stop_words=list(CUSTOM_STOPWORDS))
+        model = BERTopic(min_topic_size=bertopic_min_topic_size, vectorizer_model=vectorizer_model)
         labels, _ = model.fit_transform(texts, embeddings)
+        # Reduce topics to merge highly similar ones and eliminate redundancies
+        labels, model = model.reduce_topics(docs=texts, topics=labels, nr_topics="auto")
         return labels, model
 
     else:
