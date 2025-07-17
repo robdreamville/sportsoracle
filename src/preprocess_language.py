@@ -22,7 +22,7 @@ lang2translator = {
     "da": "Helsinki-NLP/opus-mt-da-en",  # Danish
     "id": "Helsinki-NLP/opus-mt-id-en",  # Indonesian
     "et": "Helsinki-NLP/opus-mt-et-en",  # Estonian
-    "no": "Helsinki-NLP/opus-mt-no-en",  # Norwegian
+    "sv": "Helsinki-NLP/opus-mt-sv-en",  # Swedish
     "fi": "Helsinki-NLP/opus-mt-fi-en",  # Finnish
     "sl": "Helsinki-NLP/opus-mt-sl-en",  # Slovenian
     "hr": "Helsinki-NLP/opus-mt-hr-en",  # Croatian

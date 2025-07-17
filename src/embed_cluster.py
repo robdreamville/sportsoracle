@@ -82,7 +82,7 @@ def embed_texts(texts, model_name="all-MiniLM-L6-v2", batch_size=64):
     embeddings = model.encode(texts, show_progress_bar=True, device=device, batch_size=batch_size)
     return embeddings
 
-def cluster_embeddings(embeddings, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=10):
+def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=10):
     """
     Cluster embeddings using HDBSCAN or BERTopic.
 
@@ -104,14 +104,17 @@ def cluster_embeddings(embeddings, method="bertopic", hdbscan_min_cluster_size=5
 
     elif method == "bertopic":
         # BERTopic handles embedding clustering and topic extraction
+        if texts is None:
+            raise ValueError("BERTopic requires passing `texts` (the list of documents).")
         model = BERTopic(min_topic_size=bertopic_min_topic_size)
-        labels, _ = model.fit_transform(embeddings)
+        # supply both the raw documents and embeddings
+        labels, _ = model.fit_transform(texts, embeddings)
         return labels, model
 
     else:
         raise ValueError(f"Unknown clustering method: {method}. Choose 'hdbscan' or 'bertopic'.")
 
-def save_results(embeddings, metadata, labels):
+def save_results(embeddings, metadata, labels, model=None, method="bertopic"):
     """
     Save embeddings, metadata, and cluster assignments to disk for downstream use.
     Outputs:
@@ -142,14 +145,13 @@ def save_results(embeddings, metadata, labels):
     with open(os.path.join(DATA_DIR, "clusters.json"), "w", encoding="utf-8") as f:
         json.dump(clusters, f, ensure_ascii=False, indent=2)
 
-     # If BERTopic, extract and save topic keywords
-    if method == "bertopic" and model is not None and isinstance(model, BERTopic):
-        keywords_map = {}
-        for cid in clusters:
-            topic = model.get_topic(cid)
-            # model.get_topic(-1) returns outliers; skip if empty
-            if topic:
-                keywords_map[cid] = [word for word, _ in topic]
+    # BERTopic‑only: extract and persist topic keywords
+    if method == "bertopic" and model is not None:
+        keywords_map = {
+            cid: [word for word, _ in model.get_topic(cid)]
+            for cid in clusters
+            if model.get_topic(cid)
+        }
         with open(os.path.join(DATA_DIR, "cluster_keywords.json"), "w", encoding="utf-8") as f:
             json.dump(keywords_map, f, ensure_ascii=False, indent=2)
 
@@ -165,7 +167,7 @@ def run_pipeline(method="bertopic", **kwargs):
     """
     metadata, texts = load_data()
     embeddings = embed_texts(texts)
-    labels, model = cluster_embeddings(embeddings, method=method, **kwargs)
+    labels, model = cluster_embeddings(embeddings, texts=texts, method=method, **kwargs)
     save_results(embeddings, metadata, labels, model=model, method=method)
     print(f"Pipeline complete with method={method}. Produced {len(set(labels))} clusters.")
 
