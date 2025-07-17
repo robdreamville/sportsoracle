@@ -121,7 +121,7 @@ def embed_texts(texts, model_name="all-MiniLM-L6-v2", batch_size=64):
     embeddings = model.encode(texts, show_progress_bar=True, device=device, batch_size=batch_size)
     return embeddings
 
-def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=20):
+def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=8):
     """
     Cluster embeddings using HDBSCAN or BERTopic.
 
@@ -151,7 +151,7 @@ def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cl
         model = BERTopic(min_topic_size=bertopic_min_topic_size, vectorizer_model=vectorizer_model)
         labels, _ = model.fit_transform(texts, embeddings)
         # Reduce topics to merge highly similar ones and eliminate redundancies
-        model = model.reduce_topics(texts, nr_topics="auto")
+        model = model.reduce_topics(texts, nr_topics=10)  # Try 10 topics
         labels = model.topics_
         return labels, model
 
