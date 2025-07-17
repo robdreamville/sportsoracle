@@ -6,6 +6,7 @@ import fasttext
 import torch
 from transformers import pipeline
 from collections import defaultdict
+import urllib.request
 
 # Download NLTK punkt for sentence tokenization
 nltk.download('punkt', quiet=True)
@@ -13,8 +14,19 @@ nltk.download('punkt', quiet=True)
 PROJECT_ROOT = os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
+# Download fasttext language detection model if not already present
+def download_fasttext_model(model_path='src/lid.176.bin'):
+    if not os.path.exists(model_path):
+        print("Downloading FastText language identification model...")
+        url = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+        urllib.request.urlretrieve(url, model_path)
+        print("Model downloaded successfully.")
+    else:
+        print("FastText model already exists.")
+
 # Load fasttext model for language detection (adjust path if needed)
-fasttext_model = fasttext.load_model('lid.176.bin')
+download_fasttext_model()
+fasttext_model = fasttext.load_model('src/lid.176.bin')
 
 lang2translator = {
     "es": "Helsinki-NLP/opus-mt-es-en",  # Spanish → English

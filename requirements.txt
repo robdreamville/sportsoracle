@@ -14,5 +14,9 @@ datasets         # Hugging Face Datasets
 
 # New for clustering
 bertopic         # for BERTopic topic modeling
-hdbscan          # density‑based clustering backend
+hdbscan          # density-based clustering backend
 umap-learn       # dimensionality reduction dependency of BERTopic
+
+# Additional dependencies
+nltk
+fasttext
