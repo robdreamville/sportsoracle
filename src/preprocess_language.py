@@ -135,7 +135,7 @@ def preprocess_language(
     """Process JSONL file to detect languages and translate to English."""
     ds = load_dataset("json", data_files=in_path, split="train")
     ds = ds.map(detect_and_translate_batch, batched=True, batch_size=32)
-    ds.to_json(out_path, orient="records", lines=True, force_ascii=False)
+    ds.to_json(out_path, force_ascii=False)
     print(f"[INFO] Wrote language-normalized data to {out_path}")
 
 if __name__ == "__main__":
