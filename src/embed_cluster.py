@@ -151,8 +151,8 @@ def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cl
         model = BERTopic(min_topic_size=bertopic_min_topic_size, vectorizer_model=vectorizer_model)
         labels, _ = model.fit_transform(texts, embeddings)
         # Reduce topics to merge highly similar ones and eliminate redundancies
-        model = model.reduce_topics(texts,nr_topics=None)  # Try 10 topics
-        labels = model.topics_
+        #model = model.reduce_topics(texts,nr_topics=None)  # Try 10 topics
+        #labels = model.topics_
         return labels, model
 
     else:
