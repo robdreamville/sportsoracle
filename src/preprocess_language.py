@@ -13,10 +13,10 @@ PROJECT_ROOT = os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
 lang2translator = {
-    "es": "Helsinki-NLP/opus-mt-es-en",
-    "it": "Helsinki-NLP/opus-mt-it-en",
-    "de": "Helsinki-NLP/opus-mt-de-en",
-    "fr": "Helsinki-NLP/opus-mt-fr-en",
+    "es": "Helsinki‑NLP/opus‑mt‑es-en",  # Spanish → English
+    "it": "Helsinki‑NLP/opus‑mt‑it-en",  # Italian → English
+    "de": "Helsinki‑NLP/opus‑mt‑de-en",  # German → English (added)
+    "fr": "Helsinki‑NLP/opus‑mt‑fr-en",  # French → English
     "af": "Helsinki-NLP/opus-mt-af-en",  # Afrikaans
     "ca": "Helsinki-NLP/opus-mt-ca-en",  # Catalan
     "da": "Helsinki-NLP/opus-mt-da-en",  # Danish
@@ -24,10 +24,10 @@ lang2translator = {
     "et": "Helsinki-NLP/opus-mt-et-en",  # Estonian
     "sv": "Helsinki-NLP/opus-mt-sv-en",  # Swedish
     "fi": "Helsinki-NLP/opus-mt-fi-en",  # Finnish
-    "sl": "Helsinki-NLP/opus-mt-sl-en",  # Slovenian
-    "hr": "Helsinki-NLP/opus-mt-hr-en",  # Croatian
     "tl": "Helsinki-NLP/opus-mt-tl-en",  # Tagalog
     "pl": "Helsinki-NLP/opus-mt-pl-en",  # Polish
+    "pt": "Helsinki-NLP/opus-mt-en-ROMANCE",# For Portuguese via multilingual model
+
 }
 _translator_cache = {}
 
