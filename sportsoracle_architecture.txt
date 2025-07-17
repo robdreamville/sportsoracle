@@ -160,5 +160,6 @@ SportsOracle is a modular, multilingual pipeline for scraping, normalizing, embe
 - AI assistant: GitHub Copilot
 
 
-#TODO update cluster algo 
+#TODO update cluster algo - done 
+#TODO data/clusters (2).json is the new clusters file with title, keywords from bert passed along.
 #TODO summarize_trends, cluster_loader, keyword_extractor, summarizer
