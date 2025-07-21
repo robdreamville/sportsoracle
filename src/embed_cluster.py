@@ -207,7 +207,7 @@ def save_results(embeddings, metadata, labels, model=None, method="bertopic"):
         }
         # Extract human‑readable titles
         import pandas as pd
-        info = model.get_topic_info(diversity=0.7)
+        info = model.get_topic_info()
         titles_map = {
             int(row.Topic): row.Name
             for row in info.itertuples(index=False)
