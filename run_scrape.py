@@ -25,7 +25,7 @@ def run_scrape():
     subs = [
         "soccer", "football", "PremierLeague", "ChampionsLeague",
         "LaLiga", "SerieA", "Bundesliga", "Ligue1",
-        "nba", "NBAOffseason", "nba_draft", "nbacirclejerk",
+        "nba", "NBATalk", "nba_draft", "nbacirclejerk", "nbadiscussion",
     ]
 
     print("\n🔴 Scraping Reddit posts…")

@@ -53,7 +53,7 @@ search_query = st.text_input("Search summaries or titles", "")
 # --- Filter trends by category ---
 def filter_by_category(trends, selected_sport):
     # Drop cluster -1 (noise)
-    trends = [t for t in trends if t["cluster_id"] != -1]
+    trends = [t for t in trends if t["cluster_id"]] #!= -1]
     if selected_sport == "All":
         return [t for t in trends if t["category"] in ("nba", "soccer")]
     else:
