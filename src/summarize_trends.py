@@ -5,12 +5,12 @@
 # and generates cluster-level summaries, top keywords, and top titles.
 # Handles multilingual input and ensures all output is ASCII-clean and in English.
 
-
 import os
 import json
 from datasets import load_dataset
 from transformers import pipeline
 import torch
+from collections import Counter
 
 # Paths
 PROJECT_ROOT = os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
@@ -33,6 +33,17 @@ def get_post_text(post):
         return f"{post.get('title_en', '')}\n\n{post.get('summary_en', '')}\n\n{post.get('text_en', '')}".strip()
     else:
         return post.get("text_en", "")
+
+# Assign category to a cluster based on majority of post categories
+def assign_cluster_category(posts):
+    cats = [p.get("category", "").lower() for p in posts if p.get("category", "").lower() in ("nba", "soccer")]
+    if not cats:
+        return "nba"
+    count = Counter(cats)
+    if count["nba"] >= count["soccer"]:
+        return "nba"
+    else:
+        return "soccer"
 
 # Main summarization pipeline
 def summarize_trends(
@@ -58,6 +69,8 @@ def summarize_trends(
     for cid, cluster in clusters.items():
         post_ids = cluster.get("post_ids", [])
         posts = [metadata[pid] for pid in post_ids if pid in metadata]
+        # Assign category based on all posts in the cluster
+        category = assign_cluster_category(posts)
         # Top titles by score (or num_comments as fallback)
         def score(post):
             return post.get("score", 0) or post.get("num_comments", 0) or 0
@@ -78,6 +91,7 @@ def summarize_trends(
         cluster_summaries.append({
             "cluster_id": int(cid),
             "total_posts": len(posts),
+            "category": category,
             "keywords": cluster.get("keywords", []),
             "summary": summary,
             "top_titles": top_titles

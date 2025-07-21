@@ -21,3 +21,6 @@ umap-learn       # dimensionality reduction dependency of BERTopic
 nltk
 fasttext
 umap-learn
+
+#UI
+streamlit
