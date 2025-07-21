@@ -201,9 +201,9 @@ def save_results(embeddings, metadata, labels, model=None, method="bertopic"):
     if method == "bertopic" and model is not None:
         # Extract keyword lists
         keywords_map = {
-            cid: [word for word, _ in model.get_topic(cid, diversity=0.7)]
+            cid: [word for word, _ in model.get_topic(cid)]
             for cid in clusters
-            if model.get_topic(cid, diversity=0.7)
+            if model.get_topic(cid)
         }
         # Extract human‑readable titles
         import pandas as pd
