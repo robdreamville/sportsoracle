@@ -44,7 +44,7 @@ CUSTOM_STOPWORDS = BASE_STOPWORDS.union({
     # Numbers that get picked up
     '2025', '2024', '2023', '10', '20', '30', '40', '50','29', '28', '39', '38', '27', '26', '37', '36', '25', '24', '35', '34', '23', '22', '33', '32', '21', '20', '31', '30', '19', '18', '29', '28', '17', '16', '27', '26', '15', '14', '25', '24', '13', '12', '23', '22', '11', '10', '21', '20', '9', '8', '19', '18', '7', '6', '17', '16', '5', '4', '15', '14', '3', '2', '13', '12', '1', '0', '11', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0'
     # Reddit and platform-specific
-    'r', 'u', 'subreddit', 'mod', 'nsfw', 'flair',
+    'r', 'u', 'subreddit', 'mod', 'nsfw', 'flair', 'discussion thread', 'discussion', 'thread'
     # Sports generic verbs
     'watch', 'watching', 'talk', 'talking', 'looks', 'looking', 'feel', 'feeling',
     'start', 'starting', 'started', 'bench',
