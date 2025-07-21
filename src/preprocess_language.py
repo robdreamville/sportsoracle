@@ -53,6 +53,8 @@ lang2translator = {
     "pt": "Helsinki-NLP/opus-mt-roa-en",  # Portuguese → English
     "no": "Helsinki-NLP/opus-mt-nb-en",  # Norwegian → English
     "ja": "Helsinki-NLP/opus-mt-ja-en",  # Japanese → English
+    "ru": "Helsinki-NLP/opus-mt-ru-en",  # Russian → English
+    "zh": "Helsinki-NLP/opus-mt-zh-en",  # Chinese → English
 }
 
 _translator_cache = {}

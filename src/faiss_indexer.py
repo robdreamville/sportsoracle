@@ -9,6 +9,8 @@ import json
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
+from src.config import load_config
+config = load_config()
 
 # Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
 def get_project_root():
@@ -19,12 +21,14 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
 def build_faiss_index(
     category="nba",  # or 'soccer'
-    model_name="all-mpnet-base-v2"
+    model_name=None
 ):
     """
     Build a FAISS index from precomputed embeddings and save index + id→metadata mapping.
     Now supports category-specific files.
     """
+    if model_name is None:
+        model_name = config["embedding_model"]
     embeddings_path = os.path.join(DATA_DIR, f"embeddings_{category}.npy")
     metadata_path = os.path.join(DATA_DIR, f"metadata_{category}.jsonl")
     index_path = os.path.join(DATA_DIR, f"faiss_{category}.index")
@@ -46,11 +50,13 @@ def build_faiss_index(
         json.dump(mapping, f, indent=2)
     print(f"FAISS index and mapping saved to {index_path}, {mapping_path}")
 
-def search(query, top_k=5, model_name="all-mpnet-base-v2", category="nba"):
+def search(query, top_k=5, model_name=None, category="nba"):
     """
     Search the FAISS index for the top_k most similar items to the input query in the given category.
     Returns a list of dicts with metadata and distance.
     """
+    if model_name is None:
+        model_name = config["embedding_model"]
     index_path = os.path.join(DATA_DIR, f"faiss_{category}.index")
     mapping_path = os.path.join(DATA_DIR, f"index_mapping_{category}.json")
     # Load model and index
@@ -69,5 +75,5 @@ def search(query, top_k=5, model_name="all-mpnet-base-v2", category="nba"):
 
 # Allow this script to be run standalone for testing
 if __name__ == "__main__":
-    build_faiss_index(category="nba")
-    build_faiss_index(category="soccer")
+    for cat in config["categories"]:
+        build_faiss_index(category=cat)

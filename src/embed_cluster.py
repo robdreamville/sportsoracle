@@ -17,6 +17,8 @@ from bertopic import BERTopic
 from hdbscan import HDBSCAN
 from sklearn.feature_extraction.text import CountVectorizer
 from umap import UMAP
+from src.config import load_config
+config = load_config()
 # Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
 
 
@@ -51,7 +53,7 @@ CUSTOM_STOPWORDS = BASE_STOPWORDS.union({
     # Outcome-related but vague
     'better', 'worse', 'good', 'bad', 'crazy', 'insane', 'wild', 'amazing', 'great', 'terrible',
     # Random junk
-    'etc', 'lol', 'yeah', 'thing', 'stuff', 'weekly discussion', 'weekly', 'footballrelated', 'chat latest'
+    'etc', 'lol', 'yeah', 'thing', 'stuff', 'weekly discussion', 'weekly', 'footballrelated', 'chat latest', 'bit ', 'happened'
 })
 
 
@@ -110,61 +112,57 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined_en.jsonl")):
     texts = [item["text_for_embedding"] for item in metadata]
     return metadata, texts
 
-def embed_texts(texts, model_name="all-mpnet-base-v2", batch_size=64):
+def embed_texts(texts, model_name=None, batch_size=None):
     """
     Generate embeddings for all texts using SentenceTransformers.
     Uses GPU if available.
-    models: all-MiniLM-L6-v2, 
     """
+    if model_name is None:
+        model_name = config["embedding_model"]
+    if batch_size is None:
+        batch_size = config["embedding_batch_size"]
     model = SentenceTransformer(model_name)
     device = "cuda" if model.device.type == "cuda" else "cpu"
     print(f"Embedding on device: {device}")
-    # Efficient batch encoding
     embeddings = model.encode(texts, show_progress_bar=True, device=device, batch_size=batch_size)
     return embeddings
 
-def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=5, bertopic_min_topic_size=5):
+def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=None, bertopic_min_topic_size=None):
     """
     Cluster embeddings using HDBSCAN or BERTopic.
-
-    Args:
-        embeddings: np.ndarray of shape (n_samples, n_features)
-        method: 'hdbscan' or 'bertopic'
-        hdbscan_min_cluster_size: HDBSCAN minimum cluster size
-        bertopic_min_topic_size: BERTopic minimum topic size
-
-    Returns:
-        labels: array of cluster/topic labels for each embedding
-        model: fitted clustering or topic model
     """
+    if hdbscan_min_cluster_size is None:
+        hdbscan_min_cluster_size = config["hdbscan_min_cluster_size"]
+    if bertopic_min_topic_size is None:
+        bertopic_min_topic_size = config["bertopic_min_topic_size"]
     if method == "hdbscan":
-        # HDBSCAN infers clusters and labels noise as -1
         model = HDBSCAN(min_cluster_size=hdbscan_min_cluster_size)
         labels = model.fit_predict(embeddings)
         return labels, model
-
-
     elif method == "bertopic":
-        # BERTopic handles embedding clustering and topic extraction
         if texts is None:
             raise ValueError("BERTopic requires passing `texts` (the list of documents).")
-        # Use custom stopwords in vectorizer
         from sklearn.feature_extraction.text import TfidfVectorizer
-        vectorizer_model = TfidfVectorizer(stop_words=list(CUSTOM_STOPWORDS), ngram_range=(1,2), max_features=5000)
-        umap_model = UMAP(n_neighbors=10, n_components=10, min_dist=0.0, metric='cosine')
-        hdbscan_model = HDBSCAN(min_cluster_size=3, min_samples=2, metric='euclidean')
+        vectorizer_model = TfidfVectorizer(
+            stop_words=list(CUSTOM_STOPWORDS),
+            ngram_range=tuple(config["vectorizer_ngram_range"]),
+            max_features=config["vectorizer_max_features"]
+        )
+        umap_model = UMAP(
+            n_neighbors=config["umap_n_neighbors"],
+            n_components=config["umap_n_components"],
+            min_dist=config["umap_min_dist"],
+            metric=config["umap_metric"]
+        )
+        hdbscan_model = HDBSCAN(min_cluster_size=hdbscan_min_cluster_size, min_samples=2, metric='euclidean')
         model = BERTopic(
-            min_topic_size=bertopic_min_topic_size,  # try 3, 5, 7, 10
+            min_topic_size=bertopic_min_topic_size,
             vectorizer_model=vectorizer_model,
-            umap_model=umap_model, 
+            umap_model=umap_model,
             hdbscan_model=HDBSCAN(min_cluster_size=hdbscan_min_cluster_size)
         )
         labels, _ = model.fit_transform(texts, embeddings)
-        # Reduce topics to merge highly similar ones and eliminate redundancies
-        #model = model.reduce_topics(texts,nr_topics=None)  # Try 10 topics
-        #labels = model.topics_
         return labels, model
-
     else:
         raise ValueError(f"Unknown clustering method: {method}. Choose 'hdbscan' or 'bertopic'.")
 
@@ -234,8 +232,7 @@ def run_pipeline(method="bertopic", **kwargs):
         kwargs: passed to cluster_embeddings
     """
     metadata, texts = load_data()
-    # Split by category
-    categories = ["nba", "soccer"]
+    categories = config["categories"]
     for cat in categories:
         cat_metadata = [m for m in metadata if m.get("category") == cat]
         cat_texts = [m["text_for_embedding"] for m in cat_metadata]
@@ -244,7 +241,7 @@ def run_pipeline(method="bertopic", **kwargs):
             continue
         print(f"Processing category: {cat} (posts: {len(cat_metadata)})")
         embeddings = embed_texts(cat_texts)
-        labels, model = cluster_embeddings(embeddings, texts=cat_texts, method=method, **kwargs)
+        labels, model = cluster_embeddings(embeddings, texts=cat_texts, method=method)
         # Save results for this category
         # Use category-specific filenames
         np.save(os.path.join(DATA_DIR, f"embeddings_{cat}.npy"), embeddings)

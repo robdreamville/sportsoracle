@@ -45,7 +45,7 @@ category_options = ["All", "nba", "soccer"]
 selected_sport = st.sidebar.selectbox("Select sport", category_options, index=0)
 if st.sidebar.button("Refresh data"):
     st.cache_data.clear()
-    st.experimental_rerun()
+    st.rerun()
 
 # --- Search box ---
 search_query = st.text_input("Search summaries or titles", "")

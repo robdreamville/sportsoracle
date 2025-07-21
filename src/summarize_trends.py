@@ -11,6 +11,8 @@ from datasets import load_dataset
 from transformers import pipeline
 import torch
 from collections import Counter
+from src.config import load_config
+config = load_config()
 
 # Paths
 PROJECT_ROOT = os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
@@ -20,10 +22,6 @@ OUTPUTS_DIR = os.path.join(PROJECT_ROOT, "outputs")
 CLUSTERS_PATH = os.path.join(DATA_DIR, "clusters.json")
 METADATA_PATH = os.path.join(DATA_DIR, "metadata.jsonl")
 OUT_PATH = os.path.join(OUTPUTS_DIR, "trends_summary.json")
-
-TOP_K_TITLES = 5
-SUMMARY_MAX_LENGTH = 80
-SUMMARY_MIN_LENGTH = 10
 
 # Compose text for summarization
 def get_post_text(post):
@@ -50,15 +48,21 @@ def summarize_trends(
     clusters_path=None,  # Not used, we process per-category
     metadata_path=None,  # Not used, we process per-category
     out_path=OUT_PATH,
-    top_k_titles=TOP_K_TITLES,
-    summary_max_length=SUMMARY_MAX_LENGTH,
-    summary_min_length=SUMMARY_MIN_LENGTH
+    top_k_titles=None,
+    summary_max_length=None,
+    summary_min_length=None
 ):
-    # Process both NBA and soccer clusters/metadata
-    categories = ["nba", "soccer"]
+    # Use config values if not provided
+    if top_k_titles is None:
+        top_k_titles = config["top_k_titles"]
+    if summary_max_length is None:
+        summary_max_length = config["summary_max_length"]
+    if summary_min_length is None:
+        summary_min_length = config["summary_min_length"]
+    categories = config["categories"]
     all_cluster_summaries = []
     device = 0 if torch.cuda.is_available() else -1
-    summarizer = pipeline("summarization", model="facebook/bart-large-cnn", device=device)
+    summarizer = pipeline("summarization", model=config["summary_model"], device=device)
     for cat in categories:
         clusters_file = os.path.join(DATA_DIR, f"clusters_{cat}.json")
         metadata_file = os.path.join(DATA_DIR, f"metadata_{cat}.jsonl")
@@ -71,17 +75,13 @@ def summarize_trends(
         for cid, cluster in clusters.items():
             post_ids = cluster.get("post_ids", [])
             posts = [metadata[pid] for pid in post_ids if pid in metadata]
-            # Assign category (fixed per file)
             category = cat
-            # Top titles by score (or num_comments as fallback)
             def score(post):
                 return post.get("score", 0) or post.get("num_comments", 0) or 0
             top_posts = sorted(posts, key=score, reverse=True)[:top_k_titles]
             top_titles = [p.get("title_en") or p.get("title") or "" for p in top_posts if (p.get("title_en") or p.get("title"))]
-            # Compose text for summary (use top N posts)
             summary_texts = [get_post_text(p) for p in top_posts if get_post_text(p)]
-            summary_input = "\n\n".join(summary_texts)[:2000]  # Truncate to fit model
-            # Generate summary
+            summary_input = "\n\n".join(summary_texts)[:2000]
             if summary_input.strip():
                 try:
                     summary = summarizer(summary_input, max_length=summary_max_length, min_length=summary_min_length, do_sample=False)[0]["summary_text"].strip()
@@ -89,7 +89,6 @@ def summarize_trends(
                     summary = f"[Summary failed: {e}]"
             else:
                 summary = "[No summary: not enough content]"
-            # Compose output dict
             all_cluster_summaries.append({
                 "cluster_id": int(cid),
                 "total_posts": len(posts),
@@ -98,9 +97,7 @@ def summarize_trends(
                 "summary": summary,
                 "top_titles": top_titles
             })
-    # Sort by total_posts descending
     all_cluster_summaries.sort(key=lambda x: -x["total_posts"])
-    # Write output
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(all_cluster_summaries, f, indent=2)
