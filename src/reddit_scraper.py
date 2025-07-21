@@ -24,9 +24,10 @@ def scrape_reddit_posts(subreddits, limit=200, data_dir=None):
         "bundesliga": "soccer",
         "ligue1": "soccer",
         "nba": "nba",
-        "nbaoffseason": "nba",
+        "nbatalk": "nba",
         "nba_draft": "nba",
         "nbacirclejerk": "nba",
+        "nbadiscussion": "nba",
     }
     NBA_KEYWORDS = ["nba", "basketball"]
     SOCCER_KEYWORDS = ["soccer", "football", "premier league", "champions league", "laliga", "serie a", "bundesliga", "ligue 1", "futbol"]
