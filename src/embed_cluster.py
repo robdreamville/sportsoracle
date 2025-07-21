@@ -16,6 +16,7 @@ from datasets import load_dataset
 from bertopic import BERTopic
 from hdbscan import HDBSCAN
 from sklearn.feature_extraction.text import CountVectorizer
+from umap import UMAP
 # Dynamic project root for cross-platform compatibility (Colab, Kaggle, local)
 
 
