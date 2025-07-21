@@ -109,10 +109,11 @@ def load_data(path=os.path.join(DATA_DIR, "raw_combined_en.jsonl")):
     texts = [item["text_for_embedding"] for item in metadata]
     return metadata, texts
 
-def embed_texts(texts, model_name="all-MiniLM-L6-v2", batch_size=64):
+def embed_texts(texts, model_name="all-mpnet-base-v2", batch_size=64):
     """
     Generate embeddings for all texts using SentenceTransformers.
     Uses GPU if available.
+    models: all-MiniLM-L6-v2, 
     """
     model = SentenceTransformer(model_name)
     device = "cuda" if model.device.type == "cuda" else "cpu"
