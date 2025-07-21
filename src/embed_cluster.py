@@ -151,8 +151,8 @@ def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cl
         # Use custom stopwords in vectorizer
         from sklearn.feature_extraction.text import TfidfVectorizer
         vectorizer_model = TfidfVectorizer(stop_words=list(CUSTOM_STOPWORDS), ngram_range=(1,2), max_features=5000)
-        umap_model = UMAP(n_neighbors=25, n_components=7, min_dist=0.1, metric='cosine')
-        hdbscan_model = HDBSCAN(min_cluster_size=5, min_samples=2, metric='cosine')
+        umap_model = UMAP(n_neighbors=10, n_components=5, min_dist=0.0, metric='cosine')
+        hdbscan_model = HDBSCAN(min_cluster_size=3, min_samples=1, metric='euclidean')
         model = BERTopic(
             min_topic_size=bertopic_min_topic_size,  # try 3, 5, 7, 10
             vectorizer_model=vectorizer_model,
