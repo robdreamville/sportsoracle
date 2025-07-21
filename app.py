@@ -1,11 +1,9 @@
 import streamlit as st
 import json
 import os
-from collections import Counter
+import re
 
 TRENDS_PATH = "outputs/trends_summary.json"
-METADATA_PATH = "data/metadata.jsonl"
-TOP_K_TITLES = 5  # Use the same as in summarize_trends.py
 
 # --- Data loading and caching ---
 @st.cache_data(show_spinner=False)
@@ -15,97 +13,82 @@ def load_trends():
     with open(TRENDS_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
-@st.cache_data(show_spinner=False)
-def load_metadata_with_clusters():
-    if not os.path.exists(METADATA_PATH):
-        return []
-    with open(METADATA_PATH, "r", encoding="utf-8") as f:
-        return [json.loads(line) for line in f]
-
-# --- Assign category to each cluster using all posts in that cluster ---
-def build_cluster_category_map(metadata):
-    cluster_to_categories = {}
-    for post in metadata:
-        cid = str(post.get("cluster"))
-        cat = post.get("category", "").lower()
-        if cid and cat in ("nba", "soccer"):
-            cluster_to_categories.setdefault(cid, []).append(cat)
-    return cluster_to_categories
-
-# Assign category: majority vote, tie or empty defaults to 'nba'
-def assign_cluster_category(cid, cluster_to_categories):
-    cats = cluster_to_categories.get(str(cid), [])
-    if not cats:
-        return "nba"
-    count = Counter(cats)
-    if count["nba"] >= count["soccer"]:
-        return "nba"
-    else:
-        return "soccer"
+# --- Utility: Pick best title for a cluster based on summary ---
+def pick_best_title(summary, titles):
+    # Lowercase and tokenize, remove punctuation
+    def tokenize(text):
+        return set(re.findall(r'\w+', text.lower()))
+    summary_tokens = tokenize(summary)
+    best_title = titles[0] if titles else "(No title)"
+    best_score = 0
+    for title in titles:
+        title_tokens = tokenize(title)
+        score = len(summary_tokens & title_tokens)
+        if score > best_score:
+            best_score = score
+            best_title = title
+    return best_title
 
 # --- UI ---
-st.set_page_config(page_title="SportsOracle Dashboard", layout="wide")
+st.set_page_config(page_title="SportsOracle Trending Topics Dashboard", layout="wide")
 st.title("SportsOracle Trending Topics Dashboard")
 
-# --- Data ---
 trends = load_trends()
-metadata = load_metadata_with_clusters()
 
 if not trends:
-    st.warning("No trend data found. Please run the pipeline to generate outputs/trends_summary.json.")
+    st.warning("No trends data found. Please run the pipeline to generate outputs/trends_summary.json.")
     st.stop()
 
-# --- Build cluster_id -> category map ---
-cluster_to_categories = build_cluster_category_map(metadata)
-for trend in trends:
-    trend["category"] = assign_cluster_category(trend["cluster_id"], cluster_to_categories)
-
-# --- Sidebar: Sport Filter ---
-sport_options = ["All", "nba", "soccer"]
-selected_sport = st.sidebar.selectbox(
-    "Filter by sport (NBA, Soccer, or All)", sport_options
-)
-
-# --- Sidebar: Refresh Button ---
-if st.sidebar.button("Refresh Data"):
+# --- Sidebar: Sport filter and refresh ---
+st.sidebar.header("Filters")
+category_options = ["All", "nba", "soccer"]
+selected_sport = st.sidebar.selectbox("Select sport", category_options, index=0)
+if st.sidebar.button("Refresh data"):
     st.cache_data.clear()
     st.experimental_rerun()
 
-# --- Search Box ---
+# --- Search box ---
 search_query = st.text_input("Search summaries or titles", "")
 
-# --- Filtered Trends ---
-def trend_matches(trend):
-    # Only show nba or soccer clusters
-    if trend["category"] not in ("nba", "soccer"):
-        return False
-    # Sport filter
-    if selected_sport != "All" and trend["category"] != selected_sport:
-        return False
-    # Search filter
-    if search_query.strip():
-        q = search_query.lower()
-        if q in trend["summary"].lower():
-            return True
-        for title in trend["top_titles"]:
-            if q in title.lower():
-                return True
-        return False
-    return True
+# --- Filter trends by category ---
+def filter_by_category(trends, selected_sport):
+    # Drop cluster -1 (noise)
+    trends = [t for t in trends if t["cluster_id"] != -1]
+    if selected_sport == "All":
+        return [t for t in trends if t["category"] in ("nba", "soccer")]
+    else:
+        return [t for t in trends if t["category"] == selected_sport]
 
-filtered_trends = [t for t in trends if trend_matches(t)]
+# TODO: Implement cluster relevancy/prioritization sorting (e.g., by recency, engagement, or a composite score)
+filtered_trends = filter_by_category(trends, selected_sport)
 
-# --- Main: Trend Cards ---
+# --- Search filter ---
+def search_trends(trends, query):
+    if not query.strip():
+        return trends
+    query = query.lower()
+    results = []
+    for t in trends:
+        if query in t["summary"].lower() or any(query in title.lower() for title in t["top_titles"]):
+            results.append(t)
+    return results
+
+filtered_trends = search_trends(filtered_trends, search_query)
+
+# --- Main area: Show trend cards ---
 if not filtered_trends:
     st.info("No trends match your filter/search.")
 else:
     for trend in filtered_trends:
+        display_title = pick_best_title(trend['summary'], trend['top_titles'])
         with st.container():
-            st.subheader(f"Trend {trend['cluster_id']} ({trend['total_posts']} posts)")
+            st.subheader(f"{display_title}")  # Only show the title, no post count
             st.markdown(f"**Category:** {trend['category'].capitalize()}")
-            st.markdown(f"**Summary:** {trend['summary']}")
             st.markdown(f"**Keywords:** {' | '.join(trend['keywords'])}")
+            st.markdown(f"**Summary:** {trend['summary']}")
             st.markdown("**Top Titles:**")
+            # Exclude the display_title from the list of top titles
             for title in trend["top_titles"]:
-                st.markdown(f"- {title}")
+                if title != display_title:
+                    st.markdown(f"- {title}")
             st.markdown("---")

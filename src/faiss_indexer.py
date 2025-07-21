@@ -18,15 +18,17 @@ PROJECT_ROOT = get_project_root()
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
 def build_faiss_index(
-    embeddings_path=os.path.join(DATA_DIR, "embeddings.npy"),
-    metadata_path=os.path.join(DATA_DIR, "metadata.jsonl"),
-    index_path=os.path.join(DATA_DIR, "faiss.index"),
-    mapping_path=os.path.join(DATA_DIR, "index_mapping.json"),
+    category="nba",  # or 'soccer'
     model_name="all-mpnet-base-v2"
 ):
     """
     Build a FAISS index from precomputed embeddings and save index + id→metadata mapping.
+    Now supports category-specific files.
     """
+    embeddings_path = os.path.join(DATA_DIR, f"embeddings_{category}.npy")
+    metadata_path = os.path.join(DATA_DIR, f"metadata_{category}.jsonl")
+    index_path = os.path.join(DATA_DIR, f"faiss_{category}.index")
+    mapping_path = os.path.join(DATA_DIR, f"index_mapping_{category}.json")
     # Load embeddings from disk
     embeddings = np.load(embeddings_path)
     # Build FAISS index (L2 distance)
@@ -44,11 +46,13 @@ def build_faiss_index(
         json.dump(mapping, f, indent=2)
     print(f"FAISS index and mapping saved to {index_path}, {mapping_path}")
 
-def search(query, top_k=5, model_name="all-mpnet-base-v2", index_path="data/faiss.index", mapping_path="data/index_mapping.json"):
+def search(query, top_k=5, model_name="all-mpnet-base-v2", category="nba"):
     """
-    Search the FAISS index for the top_k most similar items to the input query.
+    Search the FAISS index for the top_k most similar items to the input query in the given category.
     Returns a list of dicts with metadata and distance.
     """
+    index_path = os.path.join(DATA_DIR, f"faiss_{category}.index")
+    mapping_path = os.path.join(DATA_DIR, f"index_mapping_{category}.json")
     # Load model and index
     model = SentenceTransformer(model_name)
     index = faiss.read_index(index_path)
@@ -65,4 +69,5 @@ def search(query, top_k=5, model_name="all-mpnet-base-v2", index_path="data/fais
 
 # Allow this script to be run standalone for testing
 if __name__ == "__main__":
-    build_faiss_index()
+    build_faiss_index(category="nba")
+    build_faiss_index(category="soccer")

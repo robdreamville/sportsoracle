@@ -228,15 +228,61 @@ def save_results(embeddings, metadata, labels, model=None, method="bertopic"):
 def run_pipeline(method="bertopic", **kwargs):
     """
     Full pipeline: load data, embed, cluster, and save results.
+    Now splits by category ('nba', 'soccer') and processes each separately.
     Args:
         method: 'hdbscan' or 'bertopic'
         kwargs: passed to cluster_embeddings
     """
     metadata, texts = load_data()
-    embeddings = embed_texts(texts)
-    labels, model = cluster_embeddings(embeddings, texts=texts, method=method, **kwargs)
-    save_results(embeddings, metadata, labels, model=model, method=method)
-    print(f"Pipeline complete with method={method}. Produced {len(set(labels))} clusters.")
+    # Split by category
+    categories = ["nba", "soccer"]
+    for cat in categories:
+        cat_metadata = [m for m in metadata if m.get("category") == cat]
+        cat_texts = [m["text_for_embedding"] for m in cat_metadata]
+        if not cat_metadata:
+            print(f"No posts for category: {cat}")
+            continue
+        print(f"Processing category: {cat} (posts: {len(cat_metadata)})")
+        embeddings = embed_texts(cat_texts)
+        labels, model = cluster_embeddings(embeddings, texts=cat_texts, method=method, **kwargs)
+        # Save results for this category
+        # Use category-specific filenames
+        np.save(os.path.join(DATA_DIR, f"embeddings_{cat}.npy"), embeddings)
+        np.save(os.path.join(DATA_DIR, f"labels_{cat}.npy"), labels)
+        # Save metadata_{cat}.jsonl and build clusters dict
+        clusters = {}
+        with open(os.path.join(DATA_DIR, f"metadata_{cat}.jsonl"), "w", encoding="utf-8") as f:
+            for item, label in zip(cat_metadata, labels):
+                item_out = dict(item)
+                item_out["cluster"] = int(label)
+                f.write(json.dumps(item_out, ensure_ascii=False) + "\n")
+                cid = int(label)
+                pid = str(item_out.get("id", "")).strip()
+                if cid not in clusters:
+                    clusters[cid] = {"post_ids": []}
+                clusters[cid]["post_ids"].append(pid)
+        # BERTopic‑only: enrich clusters with titles & keywords, then save clusters_{cat}.json
+        if method == "bertopic" and model is not None:
+            keywords_map = {
+                cid: [word for word, _ in model.get_topic(cid)]
+                for cid in clusters
+                if model.get_topic(cid)
+            }
+            import pandas as pd
+            info = model.get_topic_info()
+            titles_map = {
+                int(row.Topic): row.Name
+                for row in info.itertuples(index=False)
+                if row.Topic != -1
+            }
+            for cid, data in clusters.items():
+                clusters[cid]["title"]    = titles_map.get(cid, "")
+                clusters[cid]["keywords"] = keywords_map.get(cid, [])
+        # Save enriched clusters_{cat}.json
+        with open(os.path.join(DATA_DIR, f"clusters_{cat}.json"), "w", encoding="utf-8") as f:
+            json.dump(clusters, f, ensure_ascii=False, indent=2)
+        print(f"Saved embeddings, labels, metadata, clusters for category: {cat}")
+    print(f"Pipeline complete for all categories: {categories}")
 
 if __name__ == "__main__":
     # Default: BERTopic clustering
