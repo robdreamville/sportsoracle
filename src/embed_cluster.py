@@ -148,8 +148,14 @@ def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cl
         if texts is None:
             raise ValueError("BERTopic requires passing `texts` (the list of documents).")
         # Use custom stopwords in vectorizer
-        vectorizer_model = CountVectorizer(stop_words=list(CUSTOM_STOPWORDS))
-        model = BERTopic(min_topic_size=bertopic_min_topic_size, vectorizer_model=vectorizer_model)
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        vectorizer_model = TfidfVectorizer(stop_words=list(CUSTOM_STOPWORDS), ngram_range=(1,2), max_features=5000)
+        umap_model = UMAP(n_neighbors=15, n_components=5, min_dist=0.0, metric='cosine')
+        model = BERTopic(
+            min_topic_size=7,  # try 3, 5, 7, 10
+            vectorizer_model=vectorizer_model,
+            umap_model=umap_model
+        )
         labels, _ = model.fit_transform(texts, embeddings)
         # Reduce topics to merge highly similar ones and eliminate redundancies
         #model = model.reduce_topics(texts,nr_topics=None)  # Try 10 topics
