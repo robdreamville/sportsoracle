@@ -22,7 +22,7 @@ def build_faiss_index(
     metadata_path=os.path.join(DATA_DIR, "metadata.jsonl"),
     index_path=os.path.join(DATA_DIR, "faiss.index"),
     mapping_path=os.path.join(DATA_DIR, "index_mapping.json"),
-    model_name="all-MiniLM-L6-v2"
+    model_name="all-mpnet-base-v2"
 ):
     """
     Build a FAISS index from precomputed embeddings and save index + id→metadata mapping.
@@ -44,7 +44,7 @@ def build_faiss_index(
         json.dump(mapping, f, indent=2)
     print(f"FAISS index and mapping saved to {index_path}, {mapping_path}")
 
-def search(query, top_k=5, model_name="all-MiniLM-L6-v2", index_path="data/faiss.index", mapping_path="data/index_mapping.json"):
+def search(query, top_k=5, model_name="all-mpnet-base-v2", index_path="data/faiss.index", mapping_path="data/index_mapping.json"):
     """
     Search the FAISS index for the top_k most similar items to the input query.
     Returns a list of dicts with metadata and distance.
