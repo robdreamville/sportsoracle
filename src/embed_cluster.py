@@ -150,7 +150,7 @@ def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cl
             raise ValueError("BERTopic requires passing `texts` (the list of documents).")
         # Use custom stopwords in vectorizer
         from sklearn.feature_extraction.text import TfidfVectorizer
-        vectorizer_model = TfidfVectorizer(stop_words=list(CUSTOM_STOPWORDS), ngram_range=(1,3), max_features=5000)
+        vectorizer_model = TfidfVectorizer(stop_words=list(CUSTOM_STOPWORDS), ngram_range=(1,2), max_features=5000)
         umap_model = UMAP(n_neighbors=10, n_components=5, min_dist=0.0, metric='cosine')
         hdbscan_model = HDBSCAN(min_cluster_size=3, min_samples=2, metric='euclidean')
         model = BERTopic(
