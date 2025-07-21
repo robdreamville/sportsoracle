@@ -127,7 +127,7 @@ def embed_texts(texts, model_name=None, batch_size=None):
     embeddings = model.encode(texts, show_progress_bar=True, device=device, batch_size=batch_size)
     return embeddings
 
-def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=None, bertopic_min_topic_size=None):
+def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cluster_size=None, bertopic_min_topic_size=None, hdbscan_min_samples=None, hdbscan_metric=None):
     """
     Cluster embeddings using HDBSCAN or BERTopic.
     """
@@ -135,8 +135,12 @@ def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cl
         hdbscan_min_cluster_size = config["hdbscan_min_cluster_size"]
     if bertopic_min_topic_size is None:
         bertopic_min_topic_size = config["bertopic_min_topic_size"]
+    if hdbscan_min_samples is None:
+        hdbscan_min_samples = config["hdbscan_min_samples"]
+    if hdbscan_metric is None:
+        hdbscan_metric = config["hdbscan_metric"]
     if method == "hdbscan":
-        model = HDBSCAN(min_cluster_size=hdbscan_min_cluster_size)
+        model = HDBSCAN(min_cluster_size=hdbscan_min_cluster_size, min_samples=hdbscan_min_samples, metric=hdbscan_metric)
         labels = model.fit_predict(embeddings)
         return labels, model
     elif method == "bertopic":
@@ -154,12 +158,12 @@ def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cl
             min_dist=config["umap_min_dist"],
             metric=config["umap_metric"]
         )
-        hdbscan_model = HDBSCAN(min_cluster_size=hdbscan_min_cluster_size, min_samples=2, metric='euclidean')
+        hdbscan_model = HDBSCAN(min_cluster_size=hdbscan_min_cluster_size, min_samples=hdbscan_min_samples, metric=hdbscan_metric)
         model = BERTopic(
             min_topic_size=bertopic_min_topic_size,
             vectorizer_model=vectorizer_model,
             umap_model=umap_model,
-            hdbscan_model=HDBSCAN(min_cluster_size=hdbscan_min_cluster_size)
+            hdbscan_model=hdbscan_model
         )
         labels, _ = model.fit_transform(texts, embeddings)
         return labels, model

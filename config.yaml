@@ -7,11 +7,13 @@ embedding_batch_size: 64
 # BERTopic/Clustering
 bertopic_min_topic_size: 5
 hdbscan_min_cluster_size: 5
+hdbscan_min_samples: 2
+hdbscan_metric: euclidean
 umap_n_neighbors: 10
 umap_n_components: 10
 umap_min_dist: 0.0
 umap_metric: cosine
-vectorizer_max_features: 5000
+vectorizer_max_features: 3000
 vectorizer_ngram_range: [1, 2]
 
 # Summarization
