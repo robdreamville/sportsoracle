@@ -35,23 +35,23 @@ BASE_STOPWORDS = set([
 ])
 CUSTOM_STOPWORDS = BASE_STOPWORDS.union({
     # General sports filler
-    'fan', 'fans', 'playoffs', 'draft', 'trade', 'traded', 'ranked', 'rank', 
-    'division', 'conference', 'record', 'standings', 'stats', 'stat', 'report', 'rumor', 
-    'injury', 'injured', 'healthy', 'practice', 'lineup',
+    'fan', 'fans', 'ranked', 'rank', 
+    'division', 'conference', 'record', 'standings', 'stats', 'stat', 'report', 'rumor'
+    , 'healthy', 'practice', 'lineup',
     # Contextual noise
     'thread', 'post', 'title', 'comment', 'op', 'link', 'source',
     'via', 'tweet', 'video', 'article', 'photo', 'highlight', 'clip',
     # Numbers that get picked up
-    '2025', '2024', '2023', '10', '20', '30', '40', '50',
+    '2025', '2024', '2023', '10', '20', '30', '40', '50','29', '28', '39', '38', '27', '26', '37', '36', '25', '24', '35', '34', '23', '22', '33', '32', '21', '20', '31', '30', '19', '18', '29', '28', '17', '16', '27', '26', '15', '14', '25', '24', '13', '12', '23', '22', '11', '10', '21', '20', '9', '8', '19', '18', '7', '6', '17', '16', '5', '4', '15', '14', '3', '2', '13', '12', '1', '0', '11', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0'
     # Reddit and platform-specific
     'r', 'u', 'subreddit', 'mod', 'nsfw', 'flair',
     # Sports generic verbs
     'watch', 'watching', 'talk', 'talking', 'looks', 'looking', 'feel', 'feeling',
-    'start', 'starting', 'started', 'bench', 'benched',
+    'start', 'starting', 'started', 'bench',
     # Outcome-related but vague
     'better', 'worse', 'good', 'bad', 'crazy', 'insane', 'wild', 'amazing', 'great', 'terrible',
     # Random junk
-    'etc', 'lol', 'yeah', 'thing', 'stuff'
+    'etc', 'lol', 'yeah', 'thing', 'stuff', 'weekly discussion', 'weekly', 'footballrelated', 'chat latest'
 })
 
 
@@ -151,11 +151,13 @@ def cluster_embeddings(embeddings, texts=None, method="bertopic", hdbscan_min_cl
         # Use custom stopwords in vectorizer
         from sklearn.feature_extraction.text import TfidfVectorizer
         vectorizer_model = TfidfVectorizer(stop_words=list(CUSTOM_STOPWORDS), ngram_range=(1,2), max_features=5000)
-        umap_model = UMAP(n_neighbors=15, n_components=5, min_dist=0.0, metric='cosine')
+        umap_model = UMAP(n_neighbors=25, n_components=7, min_dist=0.1, metric='cosine')
+        hdbscan_model = HDBSCAN(min_cluster_size=5, min_samples=2, metric='cosine')
         model = BERTopic(
-            min_topic_size=7,  # try 3, 5, 7, 10
+            min_topic_size=bertopic_min_topic_size,  # try 3, 5, 7, 10
             vectorizer_model=vectorizer_model,
-            umap_model=umap_model
+            umap_model=umap_model, 
+            hdbscan_model=HDBSCAN(min_cluster_size=hdbscan_min_cluster_size)
         )
         labels, _ = model.fit_transform(texts, embeddings)
         # Reduce topics to merge highly similar ones and eliminate redundancies
@@ -199,13 +201,13 @@ def save_results(embeddings, metadata, labels, model=None, method="bertopic"):
     if method == "bertopic" and model is not None:
         # Extract keyword lists
         keywords_map = {
-            cid: [word for word, _ in model.get_topic(cid)]
+            cid: [word for word, _ in model.get_topic(cid, diversity=0.7)]
             for cid in clusters
-            if model.get_topic(cid)
+            if model.get_topic(cid, diversity=0.7)
         }
         # Extract human‑readable titles
         import pandas as pd
-        info = model.get_topic_info()
+        info = model.get_topic_info(diversity=0.7)
         titles_map = {
             int(row.Topic): row.Name
             for row in info.itertuples(index=False)
