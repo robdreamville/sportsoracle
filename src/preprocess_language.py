@@ -9,6 +9,7 @@ from transformers import pipeline, AutoTokenizer
 from collections import defaultdict
 import urllib.request
 from tqdm import tqdm
+import unicodedata
 
 # Set CUDA debugging environment variables
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
@@ -58,58 +59,51 @@ _translator_cache = {}
 _tokenizer_cache = {}
 
 def clean_text(text):
-    """Clean text by removing invalid characters and normalizing whitespace."""
+    """Clean text by removing control/non-printable characters and normalizing whitespace, but keep emojis, diacritics, and all printable Unicode characters."""
     if not isinstance(text, str):
         return ""
-    text = re.sub(r'[^\x00-\x7F]+', ' ', text)  # Remove non-ASCII characters
-    text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
+    # Normalize Unicode (NFKC form)
+    text = unicodedata.normalize('NFKC', text)
+    # Remove control characters (category starts with 'C', except for common whitespace)
+    text = ''.join(
+        ch for ch in text
+        if (unicodedata.category(ch)[0] != 'C' or ch in ('\n', '\t'))
+    )
+    # Normalize whitespace (replace all whitespace runs with a single space)
+    text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-def chunk_text(text, tokenizer, max_tokens=460, max_chunks=10):
-    """Chunk text into pieces <= max_tokens (0.9 * 512) using the tokenizer."""
+def chunk_text(text, tokenizer, max_length=460, stride=50):
+    """
+    Split the text into chunks using the tokenizer's overflow feature.
+    
+    Args:
+        text (str): The input text to be chunked.
+        tokenizer: The tokenizer for the translation model.
+        max_length (int): The maximum number of tokens per chunk (default is 460).
+        stride (int): The number of overlapping tokens between chunks (default is 50).
+    
+    Returns:
+        list: A list of text chunks ready for translation.
+    """
     text = clean_text(text)
     if not text:
         return [text]
     
-    sentences = nltk.sent_tokenize(text)
-    chunks = []
-    current_chunk = []
-    current_token_count = 0
+    # Tokenize with overflow to handle long texts
+    encoded = tokenizer(
+        text,
+        return_overflowing_tokens=True,
+        max_length=max_length,
+        stride=stride,
+        truncation=True,
+        return_tensors="pt"
+    )
     
-    for sentence in sentences:
-        # Tokenize sentence with special tokens to mimic pipeline behavior
-        tokens = tokenizer.encode(sentence, add_special_tokens=True)
-        token_count = len(tokens)
-        
-        if current_token_count + token_count <= max_tokens:
-            current_chunk.append(sentence)
-            current_token_count += token_count
-        else:
-            if current_chunk:
-                chunks.append(" ".join(current_chunk))
-                current_chunk = [sentence]
-                current_token_count = token_count
-            else:
-                # Handle single sentence longer than max_tokens
-                encoded = tokenizer(sentence, max_length=max_tokens, truncation=True, return_tensors="pt")
-                decoded = tokenizer.decode(encoded["input_ids"][0], skip_special_tokens=True)
-                chunks.append(decoded)
-                current_token_count = 0
-        if len(chunks) >= max_chunks:
-            break
+    # Decode each chunk back to text
+    chunks = [tokenizer.decode(ids, skip_special_tokens=True) for ids in encoded["input_ids"]]
     
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
-    
-    # Verify chunk lengths
-    for chunk in chunks:
-        tokens = tokenizer.encode(chunk, add_special_tokens=True)
-        if len(tokens) > max_tokens:
-            print(f"[WARN] Chunk exceeds {max_tokens} tokens: {len(tokens)} tokens for chunk: {chunk[:50]}...")
-            encoded = tokenizer(chunk, max_length=max_tokens, truncation=True, return_tensors="pt")
-            chunks[chunks.index(chunk)] = tokenizer.decode(encoded["input_ids"][0], skip_special_tokens=True)
-    
-    return chunks if chunks else [text]
+    return chunks
 
 def translate_to_en_batch(texts, lang):
     """Batch translation for a list of texts in the same language."""
@@ -139,8 +133,8 @@ def translate_to_en_batch(texts, lang):
         if not text:
             continue
         try:
-            # Chunk text based on token count (0.9 * max_length)
-            to_translate = chunk_text(text, tokenizer, max_tokens=460)
+            # Chunk text using the updated function
+            to_translate = chunk_text(text, tokenizer, max_length=460)
             results = translator(to_translate, max_length=512, batch_size=4, truncation=True)
             translated_chunks = [r["translation_text"] for r in results]
             translated[idx] = " ".join(translated_chunks)
