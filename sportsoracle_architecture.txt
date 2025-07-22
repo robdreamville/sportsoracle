@@ -1,8 +1,8 @@
 
-# SportsOracle Project Architecture & Structure (2025)
+# SportsOracle Project Architecture & Structure (2025, Updated)
 
 ## Overview
-SportsOracle is a modular, multilingual pipeline for scraping, normalizing, embedding, clustering, and summarizing sports news and social media content. It is designed for scalability, GPU acceleration, and robust downstream analytics (summarization, search, dashboard, QA/chatbot).
+SportsOracle is a modular, multilingual pipeline for scraping, normalizing, embedding, clustering, and summarizing sports news and social media content. It is designed for scalability, GPU acceleration, robust downstream analytics (summarization, search, dashboard, QA/chatbot), and **experiment-friendly parameter tuning via a central YAML config**.
 
 ---
 
@@ -13,31 +13,30 @@ SportsOracle is a modular, multilingual pipeline for scraping, normalizing, embe
 - `requirements.txt`       : Python dependencies (transformers, keybert, scikit-learn, datasets, etc).
 - `README.md`              : Project documentation.
 - `validate_data.py`       : Validates the integrity and schema of all data files (checks for required fields, uniqueness, JSONL validity).
+- `config.yaml`            : **All tunable parameters for the pipeline (embedding, clustering, UMAP, vectorizer, summarization, categories, etc.)**
+- `src/config.py`          : Utility to load YAML config for all scripts.
 - `data/`                  : Raw and processed data files.
     - `raw_posts.jsonl`    : Reddit posts (JSONL).
     - `raw_espn.jsonl`     : ESPN RSS articles (JSONL).
     - `raw_combined.jsonl` : Combined Reddit + ESPN posts (JSONL).
     - `raw_combined_en.jsonl`: Language-normalized (English) posts, with *_en fields and detected_language.
-    - `embeddings.npy`     : Numpy array of post embeddings.
-    - `labels.npy`         : Numpy array of cluster labels.
-    - `metadata.jsonl`     : Metadata for each post, with cluster assignments.
-    - `clusters.json`      : Cluster assignments (cluster_id → list of post IDs).
-    - `faiss.index`        : (Planned) FAISS vector index for semantic search.
-    - `index_mapping.json` : (Planned) Mapping from FAISS index to metadata.
+    - `embeddings_{cat}.npy` : Numpy array of post embeddings for each category (nba, soccer).
+    - `labels_{cat}.npy`     : Numpy array of cluster labels for each category.
+    - `metadata_{cat}.jsonl` : Metadata for each post, with cluster assignments, per category.
+    - `clusters_{cat}.json`  : Cluster assignments (cluster_id → list of post IDs, keywords, title), per category.
+    - `faiss_{cat}.index`    : FAISS vector index for semantic search, per category.
+    - `index_mapping_{cat}.json` : Mapping from FAISS index to metadata, per category.
 - `outputs/`               : Final outputs.
-    - `trends_summary.json`: Cluster-level summaries, keywords, and top titles.
+    - `trends_summary.json`: **Merged cluster-level summaries, keywords, and top titles for all categories (dashboard-ready).**
 - `src/`                   : Source code modules.
     - `reddit_scraper.py`      : Scrapes Reddit using PRAW; infers category, outputs unified text fields.
     - `espn_rss_scraper.py`    : Scrapes ESPN RSS feeds using feedparser; outputs unified text fields.
     - `preprocess_language.py` : Detects language, translates all text fields to English, outputs *_en fields and detected_language (batch, chunked, robust, Datasets-based).
-    - `embed_cluster.py`       : Loads normalized data, generates embeddings (SentenceTransformers), clusters (KMeans/DBSCAN), saves results for downstream use.
-    - `summarize_trends.py`    : Loads clusters and metadata, extracts keywords (KeyBERT/tokenizer), summarizes clusters (BART/mBART), outputs trends_summary.json.
-    - `cluster_loader.py`      : Loads clusters and metadata, ensures all text is English, provides utility for downstream summarization/keyword extraction.
-    - `keyword_extractor.py`   : Batch keyword extraction using transformers tokenizer, robust stopword filtering, auto-translation if needed.
-    - `summarizer.py`          : Batch summarization using transformers pipeline, auto-translation if needed.
-    - `language_normalizer.py` : (Legacy) Detects language and translates all text fields to English, outputs cleaned JSONL.
-    - `faiss_indexer.py`       : (Planned) Builds FAISS index for semantic search, provides search API.
-    - `chatbot_interface.py`   : (Planned) Chatbot/QA interface for querying trends.
+    - `embed_cluster.py`       : **Loads normalized data, splits by category, generates embeddings, clusters (BERTopic+UMAP+HDBSCAN), saves per-category results. Uses config.yaml for all params.**
+    - `summarize_trends.py`    : Loads per-category clusters and metadata, summarizes clusters, outputs merged trends_summary.json. Uses config.yaml for all params.
+    - `faiss_indexer.py`       : Builds FAISS index for each category, provides search API. Uses config.yaml for all params.
+    - `config.py`              : Utility to load YAML config for all scripts.
+    - (Legacy/optional modules: cluster_loader.py, keyword_extractor.py, summarizer.py, language_normalizer.py)
 
 ---
 
@@ -50,80 +49,69 @@ SportsOracle is a modular, multilingual pipeline for scraping, normalizing, embe
      - Combines all posts into `raw_combined.jsonl` (JSONL, Datasets-ready).
 
 2. **Language Normalization**
-   - `src/preprocess_language.py` (preferred) or `src/language_normalizer.py`:
+   - `src/preprocess_language.py`:
      - Loads `raw_combined.jsonl` using Hugging Face Datasets.
      - Detects language for each post (langdetect).
      - Translates all text fields to English using MarianMT (Helsinki-NLP) with chunked, batch translation for GPU efficiency.
      - Filters out posts with unsupported languages.
      - Outputs `raw_combined_en.jsonl` with *_en fields and detected_language.
 
-3. **Embedding & Clustering**
+3. **Category-Split Embedding & Clustering**
    - `src/embed_cluster.py`:
      - Loads `raw_combined_en.jsonl` using Datasets.
      - Deduplicates by ID, filters invalid entries.
+     - Splits posts by `category` (nba, soccer, etc.) **before embedding and clustering**.
      - Constructs `text_for_embedding` from *_en fields (always English).
-     - Generates embeddings using SentenceTransformers (MiniLM, GPU-accelerated).
-     - Clusters embeddings using KMeans (default) or DBSCAN.
-     - Saves `embeddings.npy`, `labels.npy`, `metadata.jsonl` (with cluster assignments), and `clusters.json` (cluster_id → post IDs).
+     - Generates embeddings using SentenceTransformers (configurable model, GPU-accelerated).
+     - Clusters embeddings using **BERTopic (UMAP + HDBSCAN)**, with all parameters from config.yaml.
+     - Saves per-category outputs: `embeddings_{cat}.npy`, `labels_{cat}.npy`, `metadata_{cat}.jsonl`, `clusters_{cat}.json`.
 
-4. **Summarization & Keyword Extraction**
+4. **Summarization & Dashboard Output**
    - `src/summarize_trends.py`:
-     - Loads clusters (`clusters.json`) and metadata (`metadata.jsonl`).
+     - Loads per-category clusters (`clusters_{cat}.json`) and metadata (`metadata_{cat}.jsonl`).
      - For each cluster, extracts relevant posts, builds cluster-level text.
-     - Extracts keywords using `src/keyword_extractor.py` (tokenizer-based, robust stopword filtering, auto-translation if needed).
-     - Summarizes cluster text using `src/summarizer.py` (BART/mBART, auto-translation if needed).
-     - Outputs `outputs/trends_summary.json` (cluster summaries, keywords, top titles).
+     - Summarizes cluster text using a transformer summarizer (configurable, e.g., BART-large-CNN).
+     - Outputs **merged** `outputs/trends_summary.json` (all clusters, all categories, dashboard-ready).
 
-5. **(Planned) Semantic Search & Dashboard**
-   - `src/faiss_indexer.py`: Builds FAISS vector index from embeddings, provides fast semantic search API.
-   - `src/chatbot_interface.py`: (Planned) Interactive QA/chatbot interface for querying trends and posts.
-   - Dashboard UI (planned): Streamlit or similar for trend exploration and filtering.
+5. **Semantic Search**
+   - `src/faiss_indexer.py`:
+     - Builds a FAISS vector index for each category (`faiss_{cat}.index`), using per-category embeddings.
+     - Provides fast semantic search API for each category.
+     - Uses config.yaml for all relevant parameters.
+
+6. **Dashboard & UI (Streamlit, planned)**
+   - Loads `outputs/trends_summary.json` for trending topics.
+   - Uses FAISS search API for semantic search within each category.
+   - All filtering, sorting, and display logic is category-aware.
 
 ---
 
-## File & Function Responsibilities (Detailed)
+## File & Function Responsibilities (Updated)
 
 - **main.py**
-  - `main()`: Orchestrates the full pipeline (scraping, embedding, clustering, summarization, indexing).
+  - `main()`: Orchestrates the full pipeline (scraping, embedding, clustering, summarization, indexing), using config.yaml for all parameters.
 
 - **run_scrape.py**
   - `run_scrape()`: Calls Reddit and ESPN scrapers, writes all raw and combined data files.
-
-- **src/reddit_scraper.py**
-  - `scrape_reddit_posts(subreddits, limit, data_dir)`: Scrapes posts from subreddits, infers category, outputs unified text fields.
-
-- **src/espn_rss_scraper.py**
-  - `scrape_espn_rss(data_dir)`: Scrapes ESPN RSS feeds, outputs unified text fields.
 
 - **src/preprocess_language.py**
   - `preprocess_language(in_path, out_path)`: Loads raw posts, detects language, translates all text fields to English (batch, chunked), filters unsupported languages, outputs *_en fields and detected_language.
 
 - **src/embed_cluster.py**
   - `load_data(path)`: Loads normalized data, deduplicates, constructs text_for_embedding from *_en fields.
-  - `embed_texts(texts, model_name)`: Generates embeddings using SentenceTransformers (GPU if available).
-  - `cluster_embeddings(embeddings, method, n_clusters, dbscan_eps, dbscan_min_samples)`: Clusters embeddings using KMeans or DBSCAN.
-  - `save_results(embeddings, metadata, labels)`: Saves all outputs for downstream use.
-  - `run_pipeline(...)`: Runs the full embedding & clustering pipeline.
+  - `embed_texts(texts, model_name, batch_size)`: Generates embeddings using SentenceTransformers (GPU if available, model/batch size from config).
+  - `cluster_embeddings(embeddings, ...)`: Clusters embeddings using BERTopic (UMAP + HDBSCAN), all params from config.
+  - `run_pipeline(...)`: Runs the full embedding & clustering pipeline, per category.
 
 - **src/summarize_trends.py**
-  - `summarize_trends(...)`: Loads clusters and metadata, extracts keywords, summarizes clusters, outputs trends_summary.json.
-
-- **src/cluster_loader.py**
-  - `load_metadata(path, translate)`: Loads metadata, ensures all text is English, adds *_en fields if needed.
-  - `load_clusters(path)`: Loads clusters.json as a dict.
-
-- **src/keyword_extractor.py**
-  - `KeywordExtractor`: Class for batch keyword extraction using transformers tokenizer, robust stopword filtering, auto-translation.
-
-- **src/summarizer.py**
-  - `Summarizer`: Class for batch summarization using transformers pipeline, auto-translation.
-
-- **src/language_normalizer.py**
-  - `normalize_language(input_path, output_path)`: (Legacy) Detects language and translates all text fields to English, outputs cleaned JSONL.
+  - `summarize_trends(...)`: Loads per-category clusters and metadata, summarizes clusters, outputs merged trends_summary.json. All params from config.
 
 - **src/faiss_indexer.py**
-  - `build_faiss_index(...)`: Builds FAISS index from embeddings, saves index and mapping.
-  - `search(query, top_k, ...)`: Searches the FAISS index for similar posts.
+  - `build_faiss_index(...)`: Builds FAISS index from per-category embeddings, saves index and mapping. All params from config.
+  - `search(query, ...)`: Searches the FAISS index for similar posts, per category.
+
+- **src/config.py**
+  - `load_config(config_path)`: Loads YAML config for all scripts.
 
 - **validate_data.py**
   - `validate_jsonl(path, required_fields, id_field)`: Validates JSONL files for schema, uniqueness, and integrity.
@@ -131,26 +119,21 @@ SportsOracle is a modular, multilingual pipeline for scraping, normalizing, embe
 
 ---
 
-## Key Features
-- **Multilingual Support**: Robust translation and normalization for non-English posts (Helsinki-NLP MarianMT, mBART).
-- **Efficient, GPU-Accelerated Processing**: Batch, chunked translation and embedding for scalability.
-- **Robust Keyword Extraction**: Tokenizer-based, with fallback to frequency-based keywords.
-- **Unicode Normalization**: Ensures all output is ASCII-clean.
-- **Flexible Clustering**: KMeans (default) or DBSCAN (configurable).
-- **Extensible & Modular**: Easy to add new sources, models, or UI components.
-
----
-
-## Planned Extensions
-- FAISS-based semantic search and retrieval.
-- Interactive dashboard for trend exploration and filtering.
-- Chatbot/QA interface for querying sports trends.
-- Automated scheduling and cloud deployment.
+## Key Features & Improvements (2025)
+- **Category-Split Clustering:** NBA and soccer (and any future categories) are embedded and clustered separately for best topic granularity.
+- **Centralized Config (config.yaml):** All tunable parameters (embedding, clustering, UMAP, vectorizer, summarization, categories, etc.) are in one YAML file for easy experimentation and reproducibility.
+- **Per-Category Outputs:** All intermediate and final files are saved per category, making the pipeline modular and scalable.
+- **Experiment-Friendly:** Change any parameter in config.yaml and rerun the pipeline—no code edits required.
+- **Reproducibility:** Config-driven runs make it easy to track and reproduce experiments.
+- **Extensible:** Add new categories, models, or pipeline steps with minimal code changes.
+- **Dashboard-Ready:** Merged `trends_summary.json` is ready for UI/analytics; FAISS search is category-aware.
+- **Legacy/Unused Modules:** KMeans/DBSCAN and legacy language_normalizer/keyword_extractor are no longer in the main flow.
 
 ---
 
 ## Usage
 - Run the full pipeline: `python main.py`
+- Tune any parameter in `config.yaml` and rerun for new experiments.
 - Individual steps can be run via their respective scripts.
 
 ---
@@ -158,8 +141,3 @@ SportsOracle is a modular, multilingual pipeline for scraping, normalizing, embe
 ## Authors
 - Project owner: robdreamville
 - AI assistant: GitHub Copilot
-
-
-#TODO update cluster algo - done 
-#TODO data/clusters (2).json is the new clusters file with title, keywords from bert passed along.
-#TODO summarize_trends, cluster_loader, keyword_extractor, summarizer
