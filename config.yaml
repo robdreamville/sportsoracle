@@ -5,19 +5,19 @@ embedding_model: all-mpnet-base-v2
 embedding_batch_size: 64
 
 # BERTopic/Clustering
-bertopic_min_topic_size: 10
-hdbscan_min_cluster_size: 15
+bertopic_min_topic_size: 5
+hdbscan_min_cluster_size: 5
 hdbscan_min_samples: 5
 hdbscan_metric: euclidean
-umap_n_neighbors: 10
+umap_n_neighbors: 5
 umap_n_components: 5
 umap_min_dist: 0.0
 umap_metric: cosine
-vectorizer_max_features: 2000
+vectorizer_max_features: 1000
 vectorizer_ngram_range: [1, 2]
 
 # Summarization
-summary_model: google/pegasus-xsum
+summary_model: facebook/bart-large-cnn
 summary_max_length: 80
 summary_min_length: 10
 top_k_titles: 5
