@@ -44,6 +44,15 @@ def assign_cluster_category(posts):
     else:
         return "soccer"
 
+def get_safe_max_length(tokenizer, model_name):
+    # Known model hard limits
+    if 'bart' in model_name.lower():
+        return 1024
+    if 'pegasus' in model_name.lower():
+        return 512
+    # Otherwise, use tokenizer.model_max_length, but cap at 4096 for safety
+    return min(getattr(tokenizer, 'model_max_length', 1024), 4096)
+
 # Main summarization pipeline
 def summarize_trends(
     clusters_path=None,  # Not used, we process per-category
@@ -65,7 +74,7 @@ def summarize_trends(
     device = 0 if torch.cuda.is_available() else -1
     summarizer = pipeline("summarization", model=config["summary_model"], device=device)
     tokenizer = AutoTokenizer.from_pretrained(config["summary_model"])
-    max_input_length = tokenizer.model_max_length
+    max_input_length = get_safe_max_length(tokenizer, config["summary_model"])
     def truncate_to_max_tokens(text, max_tokens):
         tokens = tokenizer.encode(text, truncation=True, max_length=max_tokens)
         return tokenizer.decode(tokens, skip_special_tokens=True)
@@ -88,7 +97,7 @@ def summarize_trends(
             top_titles = [p.get("title_en") or p.get("title") or "" for p in top_posts if (p.get("title_en") or p.get("title"))]
             summary_texts = [get_post_text(p) for p in top_posts if get_post_text(p)]
             summary_input = "\n\n".join(summary_texts)
-            # Dynamically truncate to model's max input length (in tokens)
+            # Dynamically truncate to model's safe max input length (in tokens)
             summary_input = truncate_to_max_tokens(summary_input, max_input_length)
             if summary_input.strip():
                 try:

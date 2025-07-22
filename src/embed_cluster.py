@@ -283,7 +283,41 @@ def run_pipeline(method="bertopic", **kwargs):
         with open(os.path.join(DATA_DIR, f"clusters_{cat}.json"), "w", encoding="utf-8") as f:
             json.dump(clusters, f, ensure_ascii=False, indent=2)
         print(f"Saved embeddings, labels, metadata, clusters for category: {cat}")
+        # Generate and save BERTopic visualizations for this category
+        if method == "bertopic" and model is not None:
+            viz_dir = os.path.join("outputs", f"bertopic_viz_{cat}")
+            generate_topic_visualizations(model, cat_texts, viz_dir)
+            print(f"Saved BERTopic visualizations for category: {cat} to {viz_dir}")
     print(f"Pipeline complete for all categories: {categories}")
+
+def generate_topic_visualizations(topic_model, docs, output_dir):
+    """
+    Generate and save BERTopic visualizations:
+    - 2D UMAP scatterplot (interactive HTML)
+    - Bar chart of top words per cluster (interactive HTML)
+    - Function to list all documents in a specific cluster by ID
+    Args:
+        topic_model: Trained BERTopic model
+        docs: List of documents (strings)
+        output_dir: Directory to save HTML files
+    """
+    import os
+    os.makedirs(output_dir, exist_ok=True)
+    # Ensure UMAP n_components=2 for visualization
+    from umap import UMAP
+    topic_model.umap_model = UMAP(n_components=2, n_neighbors=topic_model.umap_model.n_neighbors if hasattr(topic_model.umap_model, 'n_neighbors') else 10, min_dist=topic_model.umap_model.min_dist if hasattr(topic_model.umap_model, 'min_dist') else 0.1, metric=topic_model.umap_model.metric if hasattr(topic_model.umap_model, 'metric') else 'cosine')
+    # 2D UMAP scatterplot
+    fig_topics = topic_model.visualize_topics()
+    fig_topics.write_html(os.path.join(output_dir, "bertopic_umap_scatter.html"))
+    # Bar chart of top words per cluster
+    fig_barchart = topic_model.visualize_barchart()
+    fig_barchart.write_html(os.path.join(output_dir, "bertopic_barchart.html"))
+    # Function to list all documents in a specific cluster by ID
+    def list_docs_in_cluster(cluster_id, docs=docs, topic_model=topic_model):
+        topics, _ = topic_model.transform(docs)
+        return [i for i, t in enumerate(topics) if t == cluster_id]
+    print(f"Saved UMAP scatterplot and barchart to {output_dir}")
+    return list_docs_in_cluster
 
 if __name__ == "__main__":
     # Default: BERTopic clustering
