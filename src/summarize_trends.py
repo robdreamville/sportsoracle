@@ -13,6 +13,8 @@ import torch
 from collections import Counter
 from src.config import load_config
 from transformers import AutoTokenizer
+import datetime
+from dateutil import parser as date_parser
 config = load_config()
 
 # Paths
@@ -106,13 +108,35 @@ def summarize_trends(
                     summary = f"[Summary failed: {e}]"
             else:
                 summary = "[No summary: not enough content]"
+            # Collect all post dates as UTC timestamps
+            def get_post_timestamp(post):
+                if post.get("created_utc"):
+                    return float(post["created_utc"])
+                elif post.get("published"):
+                    try:
+                        # Try to parse published as ISO8601/date string
+                        dt = date_parser.parse(post["published"])
+                        return dt.timestamp()
+                    except Exception:
+                        return None
+                else:
+                    return None
+            created_utcs = [get_post_timestamp(p) for p in posts]
+            created_utcs = [ts for ts in created_utcs if ts]
+            if created_utcs:
+                start_date = datetime.datetime.utcfromtimestamp(min(created_utcs)).strftime("%Y-%m-%d")
+                end_date = datetime.datetime.utcfromtimestamp(max(created_utcs)).strftime("%Y-%m-%d")
+            else:
+                start_date = end_date = None
             all_cluster_summaries.append({
                 "cluster_id": int(cid),
                 "total_posts": len(posts),
                 "category": category,
                 "keywords": cluster.get("keywords", []),
                 "summary": summary,
-                "top_titles": top_titles
+                "top_titles": top_titles,
+                "start_date": start_date,
+                "end_date": end_date
             })
     all_cluster_summaries.sort(key=lambda x: -x["total_posts"])
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
