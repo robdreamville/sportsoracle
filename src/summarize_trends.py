@@ -12,6 +12,7 @@ from transformers import pipeline
 import torch
 from collections import Counter
 from src.config import load_config
+from transformers import AutoTokenizer
 config = load_config()
 
 # Paths
@@ -63,6 +64,11 @@ def summarize_trends(
     all_cluster_summaries = []
     device = 0 if torch.cuda.is_available() else -1
     summarizer = pipeline("summarization", model=config["summary_model"], device=device)
+    tokenizer = AutoTokenizer.from_pretrained(config["summary_model"])
+    max_input_length = tokenizer.model_max_length
+    def truncate_to_max_tokens(text, max_tokens):
+        tokens = tokenizer.encode(text, truncation=True, max_length=max_tokens)
+        return tokenizer.decode(tokens, skip_special_tokens=True)
     for cat in categories:
         clusters_file = os.path.join(DATA_DIR, f"clusters_{cat}.json")
         metadata_file = os.path.join(DATA_DIR, f"metadata_{cat}.jsonl")
@@ -81,7 +87,9 @@ def summarize_trends(
             top_posts = sorted(posts, key=score, reverse=True)[:top_k_titles]
             top_titles = [p.get("title_en") or p.get("title") or "" for p in top_posts if (p.get("title_en") or p.get("title"))]
             summary_texts = [get_post_text(p) for p in top_posts if get_post_text(p)]
-            summary_input = "\n\n".join(summary_texts)[:2000]
+            summary_input = "\n\n".join(summary_texts)
+            # Dynamically truncate to model's max input length (in tokens)
+            summary_input = truncate_to_max_tokens(summary_input, max_input_length)
             if summary_input.strip():
                 try:
                     summary = summarizer(summary_input, max_length=summary_max_length, min_length=summary_min_length, do_sample=False)[0]["summary_text"].strip()
