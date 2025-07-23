@@ -1,143 +1,37 @@
+SportsOracle Architecture (2025)
 
-# SportsOracle Project Architecture & Structure (2025, Updated)
+1. main.py
+   - Orchestrates end‑to‑end: scrape → preprocess → embed/cluster → summarize → index
 
-## Overview
-SportsOracle is a modular, multilingual pipeline for scraping, normalizing, embedding, clustering, and summarizing sports news and social media content. It is designed for scalability, GPU acceleration, robust downstream analytics (summarization, search, dashboard, QA/chatbot), and **experiment-friendly parameter tuning via a central YAML config**.
+2. run_scrape.py
+   - reddit_scraper.py: PRAW to pull subreddits
+   - espn_rss_scraper.py: feedparser to pull ESPN RSS
+   - Outputs raw JSONL
 
----
+3. src/preprocess_language.py
+   - FastText language detection + MarianMT translation
+   - Produces raw_combined_en.jsonl with *_en fields
 
-## Directory & File Structure
+4. src/embed_cluster.py
+   - Loads raw_combined_en.jsonl
+   - Splits by category (nba, soccer)
+   - SentenceTransformer embeddings (all‑mpnet‑base‑v2)
+   - BERTopic clustering (UMAP + HDBSCAN) with custom stopwords
+   - Saves embeddings_{cat}.npy, labels_{cat}.npy, clusters_{cat}.json
 
-- `main.py`                : Pipeline entrypoint; orchestrates the full workflow (scraping, language normalization, embedding, clustering, summarization, indexing).
-- `run_scrape.py`          : Runs Reddit and ESPN scrapers, saves combined data as JSONL.
-- `requirements.txt`       : Python dependencies (transformers, keybert, scikit-learn, datasets, etc).
-- `README.md`              : Project documentation.
-- `validate_data.py`       : Validates the integrity and schema of all data files (checks for required fields, uniqueness, JSONL validity).
-- `config.yaml`            : **All tunable parameters for the pipeline (embedding, clustering, UMAP, vectorizer, summarization, categories, etc.)**
-- `src/config.py`          : Utility to load YAML config for all scripts.
-- `data/`                  : Raw and processed data files.
-    - `raw_posts.jsonl`    : Reddit posts (JSONL).
-    - `raw_espn.jsonl`     : ESPN RSS articles (JSONL).
-    - `raw_combined.jsonl` : Combined Reddit + ESPN posts (JSONL).
-    - `raw_combined_en.jsonl`: Language-normalized (English) posts, with *_en fields and detected_language.
-    - `embeddings_{cat}.npy` : Numpy array of post embeddings for each category (nba, soccer).
-    - `labels_{cat}.npy`     : Numpy array of cluster labels for each category.
-    - `metadata_{cat}.jsonl` : Metadata for each post, with cluster assignments, per category.
-    - `clusters_{cat}.json`  : Cluster assignments (cluster_id → list of post IDs, keywords, title), per category.
-    - `faiss_{cat}.index`    : FAISS vector index for semantic search, per category.
-    - `index_mapping_{cat}.json` : Mapping from FAISS index to metadata, per category.
-- `outputs/`               : Final outputs.
-    - `trends_summary.json`: **Merged cluster-level summaries, keywords, and top titles for all categories (dashboard-ready).**
-- `src/`                   : Source code modules.
-    - `reddit_scraper.py`      : Scrapes Reddit using PRAW; infers category, outputs unified text fields.
-    - `espn_rss_scraper.py`    : Scrapes ESPN RSS feeds using feedparser; outputs unified text fields.
-    - `preprocess_language.py` : Detects language, translates all text fields to English, outputs *_en fields and detected_language (batch, chunked, robust, Datasets-based).
-    - `embed_cluster.py`       : **Loads normalized data, splits by category, generates embeddings, clusters (BERTopic+UMAP+HDBSCAN), saves per-category results. Uses config.yaml for all params.**
-    - `summarize_trends.py`    : Loads per-category clusters and metadata, summarizes clusters, outputs merged trends_summary.json. Uses config.yaml for all params.
-    - `faiss_indexer.py`       : Builds FAISS index for each category, provides search API. Uses config.yaml for all params.
-    - `config.py`              : Utility to load YAML config for all scripts.
-    - (Legacy/optional modules: cluster_loader.py, keyword_extractor.py, summarizer.py, language_normalizer.py)
+5. src/summarize_trends.py
+   - Reads clusters_{cat}.json + metadata_{cat}.jsonl
+   - Picks top posts, runs Pegasus‑XSum (or BART‑CNN) for per‑cluster summaries
+   - Emits outputs/trends_summary.json
 
----
+6. src/faiss_indexer.py
+   - Builds FAISS indices for each category from embeddings_{cat}.npy
+   - Saves faiss_{cat}.index + index_mapping_{cat}.json
 
-## Pipeline Workflow & Data Flow
+7. app.py (Streamlit)
+   - Loads outputs/trends_summary.json
+   - Presents interactive dashboard
 
-1. **Scraping**
-   - `run_scrape.py` orchestrates scraping:
-     - Calls `src/reddit_scraper.py` to scrape sports subreddits (PRAW), infers category, outputs `raw_posts.jsonl`.
-     - Calls `src/espn_rss_scraper.py` to scrape ESPN RSS feeds (feedparser), outputs `raw_espn.jsonl`.
-     - Combines all posts into `raw_combined.jsonl` (JSONL, Datasets-ready).
+Everything is driven via config.yaml (embedding model, BERTopic params, UMAP/HDBSCAN settings, summarizer, categories).  
 
-2. **Language Normalization**
-   - `src/preprocess_language.py`:
-     - Loads `raw_combined.jsonl` using Hugging Face Datasets.
-     - Detects language for each post (langdetect).
-     - Translates all text fields to English using MarianMT (Helsinki-NLP) with chunked, batch translation for GPU efficiency.
-     - Filters out posts with unsupported languages.
-     - Outputs `raw_combined_en.jsonl` with *_en fields and detected_language.
-
-3. **Category-Split Embedding & Clustering**
-   - `src/embed_cluster.py`:
-     - Loads `raw_combined_en.jsonl` using Datasets.
-     - Deduplicates by ID, filters invalid entries.
-     - Splits posts by `category` (nba, soccer, etc.) **before embedding and clustering**.
-     - Constructs `text_for_embedding` from *_en fields (always English).
-     - Generates embeddings using SentenceTransformers (configurable model, GPU-accelerated).
-     - Clusters embeddings using **BERTopic (UMAP + HDBSCAN)**, with all parameters from config.yaml.
-     - Saves per-category outputs: `embeddings_{cat}.npy`, `labels_{cat}.npy`, `metadata_{cat}.jsonl`, `clusters_{cat}.json`.
-
-4. **Summarization & Dashboard Output**
-   - `src/summarize_trends.py`:
-     - Loads per-category clusters (`clusters_{cat}.json`) and metadata (`metadata_{cat}.jsonl`).
-     - For each cluster, extracts relevant posts, builds cluster-level text.
-     - Summarizes cluster text using a transformer summarizer (configurable, e.g., BART-large-CNN).
-     - Outputs **merged** `outputs/trends_summary.json` (all clusters, all categories, dashboard-ready).
-
-5. **Semantic Search**
-   - `src/faiss_indexer.py`:
-     - Builds a FAISS vector index for each category (`faiss_{cat}.index`), using per-category embeddings.
-     - Provides fast semantic search API for each category.
-     - Uses config.yaml for all relevant parameters.
-
-6. **Dashboard & UI (Streamlit, planned)**
-   - Loads `outputs/trends_summary.json` for trending topics.
-   - Uses FAISS search API for semantic search within each category.
-   - All filtering, sorting, and display logic is category-aware.
-
----
-
-## File & Function Responsibilities (Updated)
-
-- **main.py**
-  - `main()`: Orchestrates the full pipeline (scraping, embedding, clustering, summarization, indexing), using config.yaml for all parameters.
-
-- **run_scrape.py**
-  - `run_scrape()`: Calls Reddit and ESPN scrapers, writes all raw and combined data files.
-
-- **src/preprocess_language.py**
-  - `preprocess_language(in_path, out_path)`: Loads raw posts, detects language, translates all text fields to English (batch, chunked), filters unsupported languages, outputs *_en fields and detected_language.
-
-- **src/embed_cluster.py**
-  - `load_data(path)`: Loads normalized data, deduplicates, constructs text_for_embedding from *_en fields.
-  - `embed_texts(texts, model_name, batch_size)`: Generates embeddings using SentenceTransformers (GPU if available, model/batch size from config).
-  - `cluster_embeddings(embeddings, ...)`: Clusters embeddings using BERTopic (UMAP + HDBSCAN), all params from config.
-  - `run_pipeline(...)`: Runs the full embedding & clustering pipeline, per category.
-
-- **src/summarize_trends.py**
-  - `summarize_trends(...)`: Loads per-category clusters and metadata, summarizes clusters, outputs merged trends_summary.json. All params from config.
-
-- **src/faiss_indexer.py**
-  - `build_faiss_index(...)`: Builds FAISS index from per-category embeddings, saves index and mapping. All params from config.
-  - `search(query, ...)`: Searches the FAISS index for similar posts, per category.
-
-- **src/config.py**
-  - `load_config(config_path)`: Loads YAML config for all scripts.
-
-- **validate_data.py**
-  - `validate_jsonl(path, required_fields, id_field)`: Validates JSONL files for schema, uniqueness, and integrity.
-  - `main()`: Runs validation on all key data files.
-
----
-
-## Key Features & Improvements (2025)
-- **Category-Split Clustering:** NBA and soccer (and any future categories) are embedded and clustered separately for best topic granularity.
-- **Centralized Config (config.yaml):** All tunable parameters (embedding, clustering, UMAP, vectorizer, summarization, categories, etc.) are in one YAML file for easy experimentation and reproducibility.
-- **Per-Category Outputs:** All intermediate and final files are saved per category, making the pipeline modular and scalable.
-- **Experiment-Friendly:** Change any parameter in config.yaml and rerun the pipeline—no code edits required.
-- **Reproducibility:** Config-driven runs make it easy to track and reproduce experiments.
-- **Extensible:** Add new categories, models, or pipeline steps with minimal code changes.
-- **Dashboard-Ready:** Merged `trends_summary.json` is ready for UI/analytics; FAISS search is category-aware.
-- **Legacy/Unused Modules:** KMeans/DBSCAN and legacy language_normalizer/keyword_extractor are no longer in the main flow.
-
----
-
-## Usage
-- Run the full pipeline: `python main.py`
-- Tune any parameter in `config.yaml` and rerun for new experiments.
-- Individual steps can be run via their respective scripts.
-
----
-
-## Authors
-- Project owner: robdreamville
-- AI assistant: GitHub Copilot
+— robdreamville
