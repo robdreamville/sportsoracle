@@ -26,24 +26,26 @@ Real‑time sports chatter is scattered across subreddits and news feeds—hard 
 ## 🚀 Getting Started (Colab / Kaggle)
 
 1. **Open the pipeline notebook**
-   Click the badge above to launch notebooks/sportsoracle-pipeline.ipynb in Colab or Kaggle.
+   - Click the badge above to launch notebooks/sportsoracle-pipeline.ipynb in Colab or Kaggle.
 
 2. **Plug in your Reddit API keys**
     In the first cell, replace the placeholder ENV vars with your own:
-    os.environ["REDDIT_CLIENT_ID"]     = "<YOUR_CLIENT_ID>"
-    os.environ["REDDIT_CLIENT_SECRET"] = "<YOUR_CLIENT_SECRET>"
+    - os.environ["REDDIT_CLIENT_ID"]     = "<YOUR_CLIENT_ID>"
+    - os.environ["REDDIT_CLIENT_SECRET"] = "<YOUR_CLIENT_SECRET>"
+ 
     You can get these by creating an app at https://reddit.com/prefs/apps.
 
 pip install -r requirements.txt
 
 3. **Install & Run**
     In the notebook cells it will:
-    !pip install -r requirements.txt
-    !time python main.py
-    At the end you’ll see:
-    Wrote cluster summaries to …/outputs/trends_summary.json
-    FAISS indexes saved to data/faiss_{nba|soccer}.index + index_mapping_*.json
-    ✅ SportsOracle pipeline complete.
+    - !pip install -r requirements.txt
+    - !time python main.py
+   
+     At the end you’ll see:
+    - Wrote cluster summaries to …/outputs/trends_summary.json
+    - FAISS indexes saved to data/faiss_{nba|soccer}.index + index_mapping_*.json
+    - ✅ SportsOracle pipeline complete.
 
 4. **Download trends_summary.json from the notebook’s outputs/ folder.**
 
@@ -56,34 +58,34 @@ pip install -r requirements.txt
     **If not:** use the one provided all though it is not current data
 
 2. **Install Streamlit:**
-    pip install streamlit
+    - pip install streamlit
 
 3. **Run the dashboard:**
-    streamlit run app.py
+    - streamlit run app.py
 
 ---
 
 ⚙️ Configuration
 All parameters are in config.yaml—no code changes required. Example:
 
-# Embedding
+**Embedding**
 embedding_model: all-mpnet-base-v2
 embedding_batch_size: 64
 
-# BERTopic/Clustering
+**BERTopic/Clustering**
 bertopic_min_topic_size: 10
 hdbscan_min_cluster_size: 10
 umap_n_neighbors: 15
 umap_n_components: 5
 vectorizer_ngram_range: [1, 3]
 
-# Summarization
+**Summarization**
 summary_model: google/pegasus-xsum  # or facebook/bart-large-cnn
 summary_max_length: 80
 summary_min_length: 10
 top_k_titles: 5
 
-# Categories
+**Categories**
 categories: [nba, soccer]
 Tweak these to dial in cluster granularity and summary style.
 
@@ -105,11 +107,11 @@ SportsOracle/
 
 ---
 💡 Future Work
-FAISS‑powered search API
+- FAISS‑powered search API
 
-Hosted dashboard deployment
+- Hosted dashboard deployment
 
-Automated updates via cron/GitHub Actions
+- Automated updates via cron/GitHub Actions
 
 ---
 👤 About Me
