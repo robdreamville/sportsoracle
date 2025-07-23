@@ -2,7 +2,7 @@
 
 **TL;DR**: A Colab/Kaggle‑ready pipeline that scrapes Reddit & ESPN, translates to English, embeds & clusters with BERTopic, and summarizes trending NBA & soccer topics—then serves them in a Streamlit dashboard.
 
-![SportsOracle Demo](assets\demo.gif)
+![SportsOracle Demo](assets/demo.gif)
 
 ---
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/robdreamville/sportsoracle/blob/main/notebooks/sportsoracle-pipeline.ipynb)
