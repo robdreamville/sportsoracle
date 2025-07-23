@@ -19,7 +19,7 @@ Real‑time sports chatter is scattered across subreddits and news feeds—hard 
 - ✅ Summarizes each trend with Pegasus/XSum or BART/CNN  
 - ✅ Serves an interactive Streamlit dashboard
 
-> 🧠 Get a single dashboard that tells you what’s buzzing in NBA and soccer.
+- 🧠 Get a single dashboard that tells you what’s buzzing in NBA and soccer.
 
 ---
 
@@ -34,8 +34,6 @@ Real‑time sports chatter is scattered across subreddits and news feeds—hard 
     - os.environ["REDDIT_CLIENT_SECRET"] = "<YOUR_CLIENT_SECRET>"
  
     You can get these by creating an app at https://reddit.com/prefs/apps.
-
-pip install -r requirements.txt
 
 3. **Install & Run**
     In the notebook cells it will:
@@ -93,17 +91,29 @@ Tweak these to dial in cluster granularity and summary style.
 
 🗂️ Project Structure
 
-SportsOracle/
-├── main.py                   # Orchestrates the full pipeline
-├── config.yaml               # All pipeline settings
-├── requirements.txt          # Full pipeline deps
-├── notebooks/                # Colab/Kaggle pipeline notebook
-│   └── sportsoracle-pipeline.ipynb
-├── src/                      # Modules: scraper, preprocess, embed, cluster, summarize
-├── data/                     # Raw & processed data, embeddings, FAISS indexes
-├── outputs/                  # trends_summary.json, visualizations
-├── app.py                    # Streamlit dashboard (only needs streamlit)
-└── README.md
+Directory structure:
+└── robdreamville-sportsoracle/
+    ├── README.md
+    ├── app.py                      # Streamlit dashboard (only needs streamlit)
+    ├── config.yaml                 # All pipeline settings
+    ├── faiss_api.py
+    ├── main.py                     # Orchestrates the full pipeline
+    ├── requirements.txt            # Full pipeline deps
+    ├── run_scrape.py
+    ├── sportsoracle_architecture.txt
+    ├── validate_data.py
+    ├── notebooks/                  # Colab/Kaggle pipeline notebook
+    │   └── sportsoracle-pipeline.ipynb
+    ├── outputs/
+    │   └── trends_summary.json     # trends_summary.json, visualizations
+    └── src/                        # Modules: scraper, preprocess, embed, cluster, summarize
+        ├── config.py
+        ├── embed_cluster.py
+        ├── espn_rss_scraper.py
+        ├── faiss_indexer.py
+        ├── preprocess_language.py
+        ├── reddit_scraper.py
+        └── summarize_trends.py
 
 ---
 💡 Future Work
