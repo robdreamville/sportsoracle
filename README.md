@@ -96,30 +96,15 @@ Tweak these to dial in cluster granularity and summary style.
 
 🗂️ Project Structure
 
-Directory structure:
+**Directory structure:**
 
-robdreamville-sportsoracle/
-├── README.md
-├── app.py                    # Streamlit dashboard (only needs streamlit)
-├── config.yaml               # All pipeline settings
-├── faiss_api.py
-├── main.py                   # Orchestrates the full pipeline
-├── requirements.txt          # Full pipeline deps
-├── run_scrape.py
-├── sportsoracle_architecture.txt
-├── validate_data.py
-├── notebooks/                # Colab/Kaggle pipeline notebook
-│   └── sportsoracle-pipeline.ipynb
-├── outputs/
-│   └── trends_summary.json   # trends_summary.json, visualizations
-└── src/                      # Modules: scraper, preprocess, embed, cluster, summarize
-    ├── config.py
-    ├── embed_cluster.py
-    ├── espn_rss_scraper.py
-    ├── faiss_indexer.py
-    ├── preprocess_language.py
-    ├── reddit_scraper.py
-    └── summarize_trends.py
+- `main.py`            – Orchestrates full pipeline  
+- `config.yaml`        – All settings  
+- `requirements.txt`   – Full pipeline deps  
+- `notebooks/`         – Colab/Kaggle pipeline notebook  
+- `src/`               – Core modules (scraper, preprocess, embed, cluster, summarize)  
+- `outputs/`           – `trends_summary.json`, visualizations  
+- `app.py`             – Streamlit dashboard (only needs Streamlit)
 
 ---
 💡 Future Work
