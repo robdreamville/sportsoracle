@@ -63,4 +63,4 @@ if __name__ == "__main__":
 # - For cloud deployment: Consider running this pipeline on a schedule (e.g., with GitHub Actions, Airflow, or a cron job on a VM) and have your dashboard always read the latest trends_summary.json.
 # - For local/Colab workflow: Just run `python main.py` and your dashboard will update with the latest data.
 # =========================
-#TODO: Integrate FAISS indexer and dashboard
+#TODO: Integrate FAISS indexer 
