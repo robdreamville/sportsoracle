@@ -1,0 +1,140 @@
+import os
+import json
+import fasttext
+import urllib.request
+from collections import defaultdict
+from datasets import load_dataset
+from tqdm import tqdm
+import re
+
+# Configuration
+PROJECT_ROOT = os.environ.get("SPORTSORACLE_ROOT") or os.getcwd()
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+JSONL_PATH = os.path.join(DATA_DIR, "C:\\Users\\12018\\Projects\\sportsoracle\\data\\raw_combined_en (7).jsonl")
+
+# Download fasttext language detection model if not already present
+def download_fasttext_model(model_path='src/lid.176.bin'):
+    if not os.path.exists(model_path):
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        print("Downloading FastText language identification model...")
+        url = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+        urllib.request.urlretrieve(url, model_path)
+        print("Model downloaded successfully.")
+    else:
+        print("FastText model already exists.")
+
+# Load fasttext model for language detection
+download_fasttext_model()
+fasttext_model = fasttext.load_model('src/lid.176.bin')
+
+def clean_text(text):
+    """Clean text by removing invalid characters and normalizing whitespace."""
+    if not isinstance(text, str):
+        return ""
+    text = re.sub(r'[^\x00-\x7F]+', ' ', text)  # Remove non-ASCII characters
+    text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
+    return text.strip()
+
+def detect_language(text):
+    """Detect language using fasttext."""
+    text = clean_text(text)
+    if not text:
+        return "en"
+    prediction = fasttext_model.predict(text.replace('\n', ' ')[:200])[0][0]
+    return prediction.replace('__label__', '')
+
+def validate_jsonl(jsonl_path):
+    """Validate the structure and translations in the JSONL file."""
+    # Initialize counters and issue trackers
+    total_records = 0
+    language_counts = defaultdict(int)
+    issues = defaultdict(list)
+    sample_translations = defaultdict(list)  # Store samples for manual inspection
+
+    # Expected fields
+    expected_fields = [
+        "title", "selftext", "summary", "text",
+        "title_en", "selftext_en", "summary_en", "text_en",
+        "detected_language"
+    ]
+    trans_fields = ["title_en", "selftext_en", "summary_en", "text_en"]
+    orig_fields = ["title", "selftext", "summary", "text"]
+
+    # Load dataset
+    try:
+        ds = load_dataset("json", data_files=jsonl_path, split="train")
+    except Exception as e:
+        print(f"[ERROR] Failed to load JSONL file: {e}")
+        return
+
+    # Process each record
+    for record in tqdm(ds, desc="Validating records"):
+        total_records += 1
+        record_id = total_records  # Use index as ID for reporting
+
+        # Check for missing fields
+        missing_fields = [f for f in expected_fields if f not in record]
+        if missing_fields:
+            issues["missing_fields"].append((record_id, missing_fields))
+
+        # Get detected language
+        lang = record.get("detected_language", "unknown")
+        language_counts[lang] += 1
+
+        # Validate translations
+        for orig_field, trans_field in zip(orig_fields, trans_fields):
+            orig_text = clean_text(record.get(orig_field, ""))
+            trans_text = clean_text(record.get(trans_field, ""))
+
+            # Case 1: detected_language == "en"
+            if lang == "en":
+                if orig_text and trans_text != orig_text:
+                    issues["en_mismatch"].append((record_id, orig_field, orig_text, trans_text))
+                if not orig_text and trans_text:
+                    issues["en_unexpected_translation"].append((record_id, orig_field, trans_text))
+            # Case 2: detected_language != "en" and not "unsupported"
+            elif lang != "unsupported" and lang != "unknown":
+                if orig_text and not trans_text:
+                    issues["missing_translation"].append((record_id, trans_field, orig_text, lang))
+                elif orig_text and trans_text == orig_text:
+                    issues["untranslated"].append((record_id, trans_field, orig_text, lang))
+                # Optional: Verify translated text is in English
+                if trans_text:
+                    detected_lang = detect_language(trans_text)
+                    if detected_lang != "en":
+                        issues["non_english_translation"].append((record_id, trans_field, trans_text, detected_lang))
+                # Collect samples for manual inspection (up to 5 per language)
+                if len(sample_translations[lang]) < 5 and orig_text and trans_text:
+                    sample_translations[lang].append((record_id, orig_field, orig_text, trans_text))
+            # Case 3: detected_language == "unsupported"
+            else:
+                if trans_text and trans_text != orig_text:
+                    issues["unsupported_translated"].append((record_id, trans_field, orig_text, trans_text))
+
+    # Print summary
+    print("\n=== JSONL Validation Summary ===")
+    print(f"Total records: {total_records}")
+    print("\nLanguage distribution:")
+    for lang, count in sorted(language_counts.items()):
+        print(f"  {lang}: {count} records")
+
+    print("\nIssues found:")
+    if not issues:
+        print("  No issues detected!")
+    else:
+        for issue_type, issue_list in issues.items():
+            print(f"  {issue_type}: {len(issue_list)} occurrences")
+            for issue in issue_list[:5]:  # Show up to 5 examples per issue
+                print(f"    Record {issue[0]}: {issue[1:]}")
+
+    print("\nSample translations (up to 5 per language):")
+    for lang, samples in sorted(sample_translations.items()):
+        print(f"\n  Language: {lang}")
+        for sample in samples:
+            record_id, field, orig_text, trans_text = sample
+            print(f"    Record {record_id} ({field}):")
+            print(f"      Original: {orig_text[:50]}...")
+            print(f"      Translated: {trans_text[:50]}...")
+
+if __name__ == "__main__":
+    validate_jsonl(JSONL_PATH)
