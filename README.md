@@ -3,6 +3,10 @@
 **TL;DR**: SportsOracle automatically scrapes Reddit & ESPN, translates content to English, and uses GPU‑accelerated embeddings + BERTopic to surface and summarize trending NBA & soccer topics, all wrapped in a Colab/Kaggle‑ready pipeline.
 
 ---
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/robdreamville/sportsoracle/blob/main/notebooks/sportsoracle-pipeline.ipynb)
+
+[![Open In Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://kaggle.com/kernels/welcome?src=https://github.com/robdreamville/sportsoracle/blob/main/notebooks/sportsoracle-pipeline.ipynb)
+
 
 ## 🎯 Why It Matters
 
