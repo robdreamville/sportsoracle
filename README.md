@@ -53,6 +53,7 @@ Real‑time sports chatter is scattered across subreddits and news feeds—hard 
 **You don’t need the full pipeline or all dependencies locally—just Streamlit:**
 
 1. **if running the notebook above:** Place your downloaded trends_summary.json into outputs/. 
+
     **If not:** use the one provided all though it is not current data
 
 2. **Install Streamlit:**
