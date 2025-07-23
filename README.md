@@ -97,6 +97,7 @@ Tweak these to dial in cluster granularity and summary style.
 🗂️ Project Structure
 
 Directory structure:
+
 robdreamville-sportsoracle/
 ├── README.md
 ├── app.py                    # Streamlit dashboard (only needs streamlit)
